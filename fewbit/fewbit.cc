@@ -34,4 +34,26 @@ torch::Tensor QuantizeBackward(torch::Tensor const &grads,
     return factors * grads;
 }
 
+torch::Tensor Gelu::forward(torch::autograd::AutogradContext *ctx,
+                            torch::Tensor const &inputs,
+                            torch::Tensor const &bounds,
+                            torch::Tensor const &levels) {
+    auto [outputs, buffer] = Quantize(inputs, bounds);
+    ctx->save_for_backward({buffer, levels});
+    return outputs;
+}
+
+torch::autograd::variable_list
+Gelu::backward(torch::autograd::AutogradContext *ctx,
+               torch::autograd::variable_list grad_output) {
+    auto vars = ctx->get_saved_variables();
+    auto grad_inputs = QuantizeBackward(grad_output[0], vars[0], vars[1]);
+    return {grad_inputs, torch::Tensor(), torch::Tensor()};
+}
+
+torch::Tensor GeluCpu(torch::Tensor const &inputs, torch::Tensor const &bounds,
+                      torch::Tensor const &levels) {
+    return Gelu::apply(inputs, bounds, levels);
+}
+
 } // namespace fewbit

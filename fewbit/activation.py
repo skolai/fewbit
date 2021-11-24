@@ -65,3 +65,8 @@ class GELUPy(Function):
 
 gelu_op = GELUOp.apply
 gelu_py = GELUPy.apply
+
+try:
+    gelu = T.ops.fewbit.gelu
+except Exception:
+    gelu = None
