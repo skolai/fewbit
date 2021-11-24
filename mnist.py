@@ -5,14 +5,15 @@ networks MNIST dataset from (Hendrycks, 2016).
 import logging
 
 import jax
-import jax.experimental.optimizers as optimizers
-import jax.experimental.stax as stax
+import jax.example_libraries.optimizers as optimizers
+import jax.example_libraries.stax as stax
 import jax.numpy as jnp
 import tensorflow as tf
 
 from argparse import ArgumentParser, Namespace
 from functools import partial
 from pathlib import Path
+from typing import Any, Tuple
 
 from data import load_mnist_dataset
 from tensorboard import TensorBoard, tensorboard
@@ -23,6 +24,24 @@ BATCH_SIZE = 128
 N_HIDDEN = 128
 N_LABELS = 10
 
+BOUNDS = jnp.array([
+    -2.39798704e+00, -7.11248159e-01, -3.26290283e-01, -1.55338428e-04,
+    3.26182064e-01, 7.10855860e-01, 2.39811567e+00
+])
+
+VALUES = jnp.array([
+    -0.00260009, -0.08883533, 0.1251944, 0.37204148, 0.6277958, 0.87466175,
+    1.08880716, 1.00259936
+])
+
+UNIT_REGISTRY = {
+    'elu': stax.Elu,
+    'gelu': stax.Gelu,
+    'gelu3bit': stax.elementwise(gelu),
+    'relu': stax.Relu,
+    'silu': stax.elementwise(jax.nn.silu),
+}
+
 sh = logging.StreamHandler()
 sh.setLevel(logging.INFO)
 sh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
@@ -30,6 +49,27 @@ logger = logging.getLogger(__file__)
 logger.propagate = False
 logger.setLevel(logging.INFO)
 logger.addHandler(sh)
+
+
+@jax.custom_vjp
+def gelu(xs: jnp.ndarray):
+    """Function gelu defines custom vector-jacobian product to save memory.
+    """
+    return jax.nn.gelu(xs)
+
+
+def gelu_fwd(xs: jnp.ndarray):
+    value = jax.nn.gelu(xs)
+    codes = jnp.searchsorted(BOUNDS, xs).astype(jnp.int8)
+    return value, (codes, )
+
+
+def gelu_bwd(state, cotan: jnp.ndarray) -> Tuple[Any, ...]:
+    codes, = state
+    return (VALUES[codes] * cotan, )
+
+
+gelu.defvjp(gelu_fwd, gelu_bwd)
 
 
 def Dropout(rate, mode='train'):
@@ -55,27 +95,21 @@ def Dropout(rate, mode='train'):
 
 
 def get_unit_by_name(unit):
-    if unit == 'relu':
-        return stax.Relu
-    elif unit == 'elu':
-        return stax.Elu
-    elif unit == 'gelu':
-        return stax.Gelu
-    else:
-        raise RuntimeError(f'Failed to find unit {unit}.')
+    if act := UNIT_REGISTRY.get(unit):
+        return act
+    raise RuntimeError(f'Failed to find unit {unit}.')
 
 
 def make_model(unit_name: str, proba: float, mode='train', n_hidden=N_HIDDEN):
-    unit = get_unit_by_name(unit_name)
-    block = [stax.Dense(n_hidden), unit, stax.Dropout(proba, mode)]
+    block = [
+        stax.Dense(n_hidden, b_init=stax.zeros),
+        get_unit_by_name(unit_name),
+        stax.Dropout(proba, mode),
+    ]
     return stax.serial(*block * 8, stax.Dense(10))
 
 
-def jit(*args, **kwargs):
-    return partial(jax.jit, *args, **kwargs)
-
-
-@jit(static_argnames='agg')
+@partial(jax.jit, static_argnames='agg')
 def loss_entropy(y_true: jnp.ndarray, y_pred: jnp.ndarray, agg: bool = True):
     assert y_pred.ndim == 2
     ls = jax.nn.log_softmax(y_pred)
@@ -156,7 +190,7 @@ if __name__ == '__main__':
     parser.add_argument('--num-epoches', default=NOEPOCHES, type=int)
     parser.add_argument('--batch-size', default=BATCH_SIZE, type=int)
     parser.add_argument('unit',
-                        choices=('relu', 'elu', 'gelu', 'silu'),
+                        choices=sorted(UNIT_REGISTRY.keys()),
                         default='gelu',
                         nargs='?',
                         help='Type of activation unit.')
