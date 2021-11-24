@@ -28,7 +28,9 @@ torch::Tensor QuantizeBackward(torch::Tensor const &grads,
     Inflate(codes.data_ptr<int32_t>(),
             codes.data_ptr<int32_t>() + codes.numel(),
             buffer.data_ptr<uint8_t>(), static_cast<int32_t>(nobits));
-    auto factors = levels.index({codes});
+    // TODO(@daskol): Parametrize compression codec routines with data
+    // element type.
+    auto factors = levels.index({codes.toType(torch::kInt64)});
     return factors * grads;
 }
 
