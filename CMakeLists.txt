@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 project("few-bit-backward" VERSION 0.0.0 LANGUAGES CXX)
 
+option(USE_CUDA "Build CUDA kernels" OFF)
+if (USE_CUDA)
+    enable_language(CUDA)
+endif ()
+
+set(TORCH_CUDA_ARCH_LIST "Auto" CACHE STRING "Target CUDA archetecture" FORCE)
+
 find_package(Torch REQUIRED)
 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
