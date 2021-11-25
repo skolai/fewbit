@@ -1,6 +1,9 @@
 import torch as T
 
-from functools import cache
+try:
+    from functools import cache  # New in Python 3.9.
+except ImportError:
+    from functools import lru_cache as cache
 
 from torch.autograd.function import Function, once_differentiable
 

@@ -1,0 +1,8 @@
+# Ignore directories.
+/.git
+/build
+/data
+**/__pycache__
+
+# Ignore shared objects
+**/*.so
