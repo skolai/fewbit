@@ -13,4 +13,9 @@ find_package(Torch REQUIRED)
 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
 
+# Force to display colorised error messages.
+if (CMAKE_GENERATOR STREQUAL "Ninja")
+    add_compile_options(-fdiagnostics-color=always)
+endif()
+
 add_subdirectory(fewbit)

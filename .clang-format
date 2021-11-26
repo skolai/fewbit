@@ -1,0 +1,12 @@
+---
+BasedOnStyle: LLVM
+IndentWidth: 4
+---
+Language: Cpp
+AccessModifierOffset: -4
+AllowShortEnumsOnASingleLine: false  # true
+AllowShortFunctionsOnASingleLine: false  # All
+
+AllowAllConstructorInitializersOnNextLine: true
+BreakConstructorInitializers: BeforeComma  # BeforeColon
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
