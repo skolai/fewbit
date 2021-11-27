@@ -27,9 +27,6 @@ USER $LOGIN
 
 ADD --chown=$UID . .
 
-RUN mkdir -p build && \
-    cd build && \
-    cmake .. -G Ninja -DCMAKE_PREFIX_PATH="$(python -c 'import torch.utils; print(torch.utils.cmake_prefix_path)')" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && \
-    ninja fewbit && \
-    cd ../fewbit && \
-    ln -sf ../build/fewbit/libfewbit.so
+RUN python setup.py build_ext \
+    --inplace \
+    --cmake-prefix-path "$(python -c 'import torch.utils; print(torch.utils.cmake_prefix_path)')"
