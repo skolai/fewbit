@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstdio>
 
 namespace fewbit {
 
@@ -79,8 +78,6 @@ void Deflate(int32_t nobits, int32_t const *begin, int32_t const *end,
     auto size_out = static_cast<uint32_t>((nobits * size_inp) / 8);
     dim3 noblocks((size_out - 1) / kThreadsPerBlock);
     dim3 nothreads(std::min(size_out, kThreadsPerBlock));
-    printf("execute kernel DeflateKernel<<<%d, %d>()\n", noblocks.x,
-           nothreads.x);
     DeflateKernel<uint8_t>
         <<<noblocks, nothreads>>>(size_out, nobits, begin, inflated);
 }
@@ -111,8 +108,6 @@ void Inflate(int32_t nobits, int32_t *begin, int32_t *end,
     auto deflate_size = static_cast<uint32_t>(end - begin); // unpacked
     dim3 noblocks((deflate_size - 1) / kThreadsPerBlock);
     dim3 nothreads(std::min(deflate_size, kThreadsPerBlock));
-    printf("execute kernel InflateKernel<<<%d, %d>()\n", noblocks.x,
-           nothreads.x);
     InflateKernel<uint8_t>
         <<<noblocks, nothreads>>>(deflate_size, nobits, deflated, begin);
 }
@@ -180,8 +175,6 @@ void DeflateBlock(int32_t nobits, uint32_t noelems, int32_t const *input,
     auto nogroups = (noelems - 1) / kWarpSize + 1;
     dim3 noblocks((noelems - 1) / kThreadsPerBlock + 1);
     dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize * nogroups));
-    printf("execute kernel DeflateBlockKernel<<<%d, %d>()\n", noblocks.x,
-           nothreads.x);
     DeflateBlockKernel<<<noblocks, nothreads>>>(nobits, noelems, input, data);
 }
 
@@ -210,7 +203,6 @@ void Gelu(uint32_t noelems, int32_t nobits, float const *bounds,
     auto nogroups = (noelems - 1) / kWarpSize + 1;
     dim3 noblocks((noelems - 1) / kThreadsPerBlock + 1);
     dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize * nogroups));
-    printf("execute kernel GeluKernel<<<%d, %d>()\n", noblocks.x, nothreads.x);
     GeluKernel<<<noblocks, nothreads>>>(nobits, noelems, bounds, inputs,
                                         outputs, state);
 }
@@ -249,8 +241,6 @@ void InflateBlock(int32_t nobits, uint32_t noelems, uint8_t const *data,
     auto nogroups = (noelems - 1) / kWarpSize + 1;
     dim3 noblocks((noelems - 1) / kThreadsPerBlock + 1);
     dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize * nogroups));
-    printf("execute kernel InflateBlockKernel<<<%d, %d>()\n", noblocks.x,
-           nothreads.x);
     InflateBlockKernel<<<noblocks, nothreads>>>(nobits, noelems, data, output);
 }
 
@@ -269,8 +259,6 @@ void GeluBackward(uint32_t noelems, int32_t nobits, float const *levels,
     auto nogroups = (noelems - 1) / kWarpSize + 1;
     dim3 noblocks((noelems - 1) / kThreadsPerBlock + 1);
     dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize * nogroups));
-    printf("execute kernel GeluBackwardKernel<<<%d, %d>()\n", noblocks.x,
-           nothreads.x);
     GeluBackwardKernel<<<noblocks, nothreads>>>(nobits, noelems, levels, state,
                                                 outgrads, ingrads);
 }
