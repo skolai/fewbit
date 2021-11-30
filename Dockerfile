@@ -25,8 +25,13 @@ USER $LOGIN
 
 # Build native library.
 
+ARG USE_CUDA=ON
+
 ADD --chown=$UID . .
 
-RUN python setup.py build_ext \
-    --inplace \
-    --cmake-prefix-path "$(python -c 'import torch.utils; print(torch.utils.cmake_prefix_path)')"
+RUN export CMAKE_PREFIX_PATH=$(python -c 'import torch.utils; print(torch.utils.cmake_prefix_path)'); \
+    if [[ "$USE_CUDA" == "ON" ]]; then \
+        python setup.py build_ext -i --cuda; \
+    else \
+        python setup.py build_ext -i; \
+    fi
