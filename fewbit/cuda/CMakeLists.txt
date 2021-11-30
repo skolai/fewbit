@@ -7,7 +7,7 @@ add_executable("fewbit-cuda-test" EXCLUDE_FROM_ALL)
 target_compile_features("fewbit-cuda-test" PRIVATE cxx_std_17 cuda_std_17)
 target_sources("fewbit-cuda-test" PRIVATE codec.cu codec.h codec_test.cu)
 
-add_library("fewbit-cuda" OBJECT)
+add_library("fewbit-cuda" STATIC)
 
 target_sources("fewbit-cuda"
     PRIVATE

@@ -1,5 +1,7 @@
 #include "gelu.h"
 
+#include <fewbit/cuda/codec.h>
+
 namespace fewbit {
 
 namespace {
