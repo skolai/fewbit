@@ -25,7 +25,7 @@ With options similar to the previous step, one can build wheel binary distributi
 python setup.py bdist_wheel --inplace --cuda
 ```
 
-# Development Environment with Docker
+## Development Environment with Docker
 
 In order to develop on different platforms we uses custom docker image for non-priviledge user based on Nvidia CUDA image.
 Image contains pre-built native extention and it is parametrized by user name and user ID in a host system.
