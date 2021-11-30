@@ -1,3 +1,5 @@
+add_subdirectory(cuda)
+
 add_executable("fewbit-codec-test" EXCLUDE_FROM_ALL)
 target_compile_features("fewbit-codec-test" PRIVATE cxx_std_20)
 target_sources("fewbit-codec-test" PRIVATE codec.cc codec.h codec_test.cc)
@@ -37,7 +39,7 @@ if (USE_CUDA)
     # If CUDA is enabled then we force CUDA C++ standard and link with new
     # compiled CUDA kernels.
     target_compile_features("fewbit" PRIVATE cuda_std_17)
-    target_link_libraries("fewbit" PUBLIC fewbit-kernel)
+    target_link_libraries("fewbit" PUBLIC fewbit-cuda fewbit-kernel)
 endif()
 
 # NOTE Install only shared object since we have no plans to use the library in
