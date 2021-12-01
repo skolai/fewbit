@@ -1,0 +1,2 @@
+# Only C++ and CUDA C++.
+*.h linguist-language=cpp
