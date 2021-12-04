@@ -3,8 +3,13 @@
 
 import torch as T
 
+from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Optional
+
+__all__ = ('HookedMemoryUsage', 'estimate_memory_usage', 'memory_usage_hooks',
+           'teniter', 'traverse')
 
 TraverseCallable = Callable[[Any, T.Tensor, bool], Any]
 
@@ -101,3 +106,36 @@ def teniter(variable: T.Tensor, include_ordinary=True, include_saved=False):
 
     for ten, _, _ in filter(predicate, state.values()):
         yield ten
+
+
+@dataclass
+class HookedMemoryUsage:
+
+    forward: Optional[int] = None
+
+    backward: Optional[int] = None
+
+    @property
+    def value(self) -> Optional[int]:
+        return self.backward or self.forward
+
+
+@contextmanager
+def memory_usage_hooks() -> HookedMemoryUsage:
+    """Function memory_usage_hooks is a context manager which subscribes to
+    pack/unpack events for saved tensors.
+    """
+    usage = HookedMemoryUsage()
+
+    def pack(ten: T.Tensor) -> Any:
+        acc = usage.forward if usage.forward else 0
+        usage.forward = acc + ten.numel() * ten.element_size()
+        return ten
+
+    def unpack(ten: T.Tensor) -> T.Tensor:
+        acc = usage.backward if usage.backward else 0
+        usage.backward = acc + ten.numel() * ten.element_size()
+        return ten
+
+    with T.autograd.graph.saved_tensors_hooks(pack, unpack):
+        yield usage

@@ -2,10 +2,11 @@ import torch as T
 
 from unittest import TestCase
 
-from fewbit.util import estimate_memory_usage, teniter, traverse
+from fewbit.util import (estimate_memory_usage, memory_usage_hooks, teniter,
+                         traverse)
 
 
-class TestTraverse(TestCase):
+class TestUtil(TestCase):
 
     def setUp(self):
         self.model1 = self.model = T.nn.Sequential(
@@ -55,4 +56,19 @@ class TestTraverse(TestCase):
         # equal size of input.
         size = 3 * 4 * 4
         diff = rhs - lhs
+        self.assertEqual(size, diff)
+
+    def test_memory_usage_hooks(self):
+        with memory_usage_hooks() as lhs:
+            xs = T.randn((3, 8))
+            ys = self.model1(xs.requires_grad_())
+
+        with memory_usage_hooks() as rhs:
+            xs = T.randn((3, 8))
+            ys = self.model2(xs.requires_grad_())
+            ys.backward(T.ones((xs.shape[0], 1)))
+
+        # See test for `estimate_memory_usage` for details.
+        size = 3 * 4 * 4
+        diff = rhs.value - lhs.value
         self.assertEqual(size, diff)
