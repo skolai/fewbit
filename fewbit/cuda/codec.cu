@@ -9,7 +9,9 @@
 
 namespace fewbit {
 
-constexpr auto kThreadsPerBlock = 512u; // or 1024?
+// Use maximum dimensionality of a thread block for compute capability from 3.5
+// to 8.6 (and maybe futher).
+constexpr auto kThreadsPerBlock = 1024u;
 
 constexpr auto kWarpSize = 8u; // Reduce warp size.
 

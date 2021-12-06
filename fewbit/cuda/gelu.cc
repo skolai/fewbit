@@ -37,12 +37,11 @@ public:
                               .memory_format(torch::MemoryFormat::Contiguous)
                               .dtype(torch::kU8);
         auto buffer = torch::empty({buffer_len}, buffer_opt);
-        auto output = torch::empty_like(inputs);
         ctx->save_for_backward({levels, buffer});
         Gelu(inputs.numel(), nobits, bounds.data_ptr<float>(),
-             inputs.data_ptr<float>(), output.data_ptr<float>(),
+             inputs.data_ptr<float>(), inputs.data_ptr<float>(),
              buffer.data_ptr<uint8_t>());
-        return output;
+        return inputs;
     }
 
     static torch::autograd::variable_list
