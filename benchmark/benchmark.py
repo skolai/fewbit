@@ -90,6 +90,7 @@ class CsvBenchmarkFormatter(BenchmarkFormatter):
             self.writer = DictWriter(self.fout, fields)
             self.writer.writeheader()
         self.writer.writerow(asdict(res))
+        self.fout.flush()
 
 
 class FileBenchmarkFormatter(BenchmarkFormatter):
@@ -103,6 +104,7 @@ class FileBenchmarkFormatter(BenchmarkFormatter):
             self.prologue = False
             print('Name', 'Wall Time', 'CUDA Memory', file=self.fout)
         print(res.name, res.wall_time, res.cuda_memory_usage, file=self.fout)
+        self.fout.flush()
 
 
 def register(name: str, **kwargs):
@@ -153,11 +155,11 @@ def spawn(name: str, timeout: int, socket: str):
         child.communicate(timeout=timeout)
     except Exception:
         child.kill()
-        raise
     if child.returncode != 0:
         print('running benchmark', name, 'fails')
-        exit(1)
-    return BenchmarkResult.from_json(output)
+        return BenchmarkResult(name, float('nan'), float('nan'))
+    else:
+        return BenchmarkResult.from_json(output)
 
 
 def bench(name: str, route):
