@@ -138,6 +138,14 @@ class BenchRoBERTaQuantized(BenchRoBERTa):
         def gelu3bit(xs):
             return T.ops.fewbit.gelu(xs, bounds, levels)
 
+        # NOTE Monkey patching of HuggingFace's transformers v4.12.5 in order
+        # to replace standard GeLU with our 3-bits GeLU approximation. Other
+        # possible solution is subclassing model and configuration via model
+        # config.
+        import transformers.activations
+        transformers.activations.ACT2FN['gelu'] = gelu3bit
+        transformers.activations.gelu = gelu3bit
+
         super().setup()
 
 
