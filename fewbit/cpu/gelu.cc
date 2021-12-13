@@ -1,6 +1,6 @@
-#include "fewbit.h"
+#include "gelu.h"
 
-#include <fewbit/codec.h>
+#include <fewbit/cpu/codec.h>
 
 namespace fewbit {
 

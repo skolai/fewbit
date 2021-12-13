@@ -6,5 +6,5 @@ TORCH_LIBRARY(fewbit, m) {
     m.def("quantize", fewbit::Quantize);
     m.def("quantize_backward", fewbit::QuantizeBackward);
 
-    m.def("gelu(Tensor self, Tensor bounds, Tensor levels) -> Tensor");
+    m.def("gelu(Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
 }

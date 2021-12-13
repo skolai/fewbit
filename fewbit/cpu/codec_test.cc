@@ -4,7 +4,7 @@
 #include <random>
 #include <ranges>
 
-#include <fewbit/codec.h>
+#include <fewbit/cpu/codec.h>
 
 void TestExample(void) {
     auto constexpr bitwidth = 3;

@@ -1,19 +1,10 @@
-add_executable("fewbit-codec-test" EXCLUDE_FROM_ALL)
-target_compile_features("fewbit-codec-test" PRIVATE cxx_std_20)
-target_sources("fewbit-codec-test" PRIVATE codec.cc codec.h codec_test.cc)
-
 add_library("fewbit" SHARED)
 set_property(TARGET "fewbit" PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_compile_features("fewbit" PRIVATE cxx_std_20)
-target_link_libraries("fewbit" PRIVATE torch)
-target_sources("fewbit"
-    PRIVATE
-        codec.cc
-        fewbit.cc
-        gelu.cc
-    PUBLIC
-        codec.h
-        gelu.h)
+target_link_libraries("fewbit"
+    PRIVATE fewbit-cpu
+    PUBLIC torch)
+target_sources("fewbit" PRIVATE fewbit.cc PUBLIC fewbit.h)
 
 # NOTE CMake does not populate target with INTERFACE/PUBLIC headers but allows
 # installation them with PUBLIC_HEADER destination. So, we populate
@@ -29,4 +20,5 @@ endif()
 install(TARGETS "fewbit"
         LIBRARY DESTINATION "fewbit")
 
+add_subdirectory(cpu)
 add_subdirectory(cuda)

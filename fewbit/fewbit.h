@@ -6,5 +6,5 @@
 
 #pragma once
 
+#include <fewbit/cpu/gelu.h>
 #include <fewbit/cuda/gelu.h>
-#include <fewbit/gelu.h>
