@@ -12,3 +12,5 @@ except Exception as e:
     warn(f'Failed to load ops library: {e}.', RuntimeWarning)
 finally:
     del Path, warn
+
+from .approx import StepWiseFunction, approximate, stepwise  # noqa: F401
