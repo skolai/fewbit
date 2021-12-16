@@ -138,11 +138,11 @@ def approximate(
             status = 'converged'
             break
 
-#        if not is_sorted(bs):
-#            bs.sort()
-#            continue
-#            status = 'failed'
-#            break
+        # Assume that all interval borders are sorted. Violation of order
+        # results in convergence issues.
+        if not is_sorted(bs):
+            status = 'failed'
+            break
     else:
         status = 'not-converged'
 
