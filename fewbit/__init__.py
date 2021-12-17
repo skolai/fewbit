@@ -11,6 +11,18 @@ try:
 except Exception as e:
     warn(f'Failed to load ops library: {e}.', RuntimeWarning)
 finally:
-    del Path, warn
+    del Path, T, warn
 
-from .approx import StepWiseFunction, approximate, stepwise  # noqa: F401
+from . import functional  # noqa: F401
+
+from .approx import StepWiseFunction, approximate  # noqa: F401
+
+# Import piecewise activation functions.
+from .module import (  # noqa: F401
+    Hardshrink, Hardsigmoid, Hardtanh, LeakyReLU, ReLU, ReLU6, Softshrink,
+    Threshold)
+
+# Import continous activation functions.
+from .module import (  # noqa: F401
+    CELU, ELU, GELU, Hardswish, LogSigmoid, Mish, SELU, Sigmoid, SiLU,
+    Softplus, Softsign, Tanh, Tanhshrink)
