@@ -5,18 +5,60 @@ import torch as T
 
 from inspect import Parameter, Signature, signature
 from sys import modules
+from typing import Optional, Tuple
 
 from . import functional
+from .functional import stepwise
 
 # Stepwise activation functions.
 STEPWISE = ('Hardshrink', 'Hardsigmoid', 'Hardtanh', 'LeakyReLU', 'ReLU',
-            'ReLU6', 'Softshrink', 'Threshold')
+            'ReLU6', 'Softshrink', 'Stepwise', 'Threshold')
 
 # Continous activation functions.
 CONTINOUS = ('CELU', 'ELU', 'GELU', 'Hardswish', 'LogSigmoid', 'Mish', 'SELU',
              'Sigmoid', 'SiLU', 'Softplus', 'Softsign', 'Tanh', 'Tanhshrink')
 
 __all__ = STEPWISE + CONTINOUS
+
+
+class Stepwise(T.nn.Module):
+    """Class Stepwise provides customization ability to define your own
+    stepwise approximation for in-place activation functions.
+
+    :param borders: Internal borders of intervals.
+    :param levels: Values of constant pieces.
+    :param parity: Whether stepwise function is odd or even under shift
+                   transformation.
+    :param shift: Shift of the origin.
+    """
+
+    def __init__(self,
+                 borders: T.Tensor,
+                 levels: T.Tensor,
+                 parity: Optional[bool] = None,
+                 shift: Optional[Tuple[float, float]] = None):
+        if borders.ndim != 1 or levels.ndim != 1:
+            raise ValueError('Exepected number of dimensions of `borders` '
+                             'and `levels` is one.')
+
+        if borders.numel() > levels.numel():
+            borders = borders[1:-1]
+
+        if borders.numel() + 1 != levels.numel():
+            raise ValueError('Size of `borders` should be lesser than size '
+                             'of `levels` by one.')
+
+        if levels.numel() > 256:
+            raise ValueError('Maximal number of step limited to 256.')
+
+        super().__init__()
+        self.register_buffer('borders', borders, True)
+        self.register_buffer('levels', levels, True)
+        self.parity = parity
+        self.shift = shift
+
+    def forward(self, xs: T.Tensor) -> T.Tensor:
+        return stepwise(xs, self.borders, self.levels, self.parity, self.shift)
 
 
 class BuiltInStepwiseFunction(T.nn.Module):
@@ -88,6 +130,7 @@ class BuiltInStepwiseFunction(T.nn.Module):
 # Produce PyTorch modules for in-place alternatives for built-in PyTorch
 # activation function enumerated above manually at runtime.
 for name in __all__:
-    ty = type(name, (BuiltInStepwiseFunction, ), {})
-    setattr(modules[__name__], name, ty)
+    if not hasattr(modules[__name__], name):
+        ty = type(name, (BuiltInStepwiseFunction, ), {})
+        setattr(modules[__name__], name, ty)
 del name, ty
