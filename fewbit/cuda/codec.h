@@ -73,4 +73,32 @@ DECLARE_STEPWISE_FUNC(Threshold, float threshold, float value);
 DECLARE_STEPWISE_FUNC_BACKWARD(LeakyRelu, float negative_slope);
 DECLARE_STEPWISE_FUNC_FORWARD(LeakyRelu, float negative_slope);
 
+/**
+ * In case of continous functions we have general kernel for backward pass and
+ * should specialize only forward pass.
+ */
+
+#define DECLARE_CONTINOUS_FUNC(name, ...)                                      \
+    void name(uint32_t noelems, float const *inputs, float *outputs,           \
+              uint8_t *state, uint32_t nobits,                                 \
+              float const *bounds __VA_OPT__(, __VA_ARGS__))
+
+DECLARE_CONTINOUS_FUNC(Celu, float alpha);
+DECLARE_CONTINOUS_FUNC(Elu, float alpha);
+DECLARE_CONTINOUS_FUNC(Gelu, bool approximate = false);
+DECLARE_CONTINOUS_FUNC(Hardswish);
+DECLARE_CONTINOUS_FUNC(LogSigmoid);
+DECLARE_CONTINOUS_FUNC(Mish);
+DECLARE_CONTINOUS_FUNC(Selu);
+DECLARE_CONTINOUS_FUNC(Sigmoid);
+DECLARE_CONTINOUS_FUNC(Silu);
+DECLARE_CONTINOUS_FUNC(Softplus, float beta, float threshold);
+DECLARE_CONTINOUS_FUNC(Softsign);
+DECLARE_CONTINOUS_FUNC(Tanh);
+DECLARE_CONTINOUS_FUNC(Tanhshrink);
+
+void StepwiseBackward(uint32_t noelems, uint8_t const *state,
+                      float const *outgrads, float *ingrads, int32_t nobits,
+                      float const *levels);
+
 } // namespace fewbit

@@ -522,4 +522,161 @@ __global__ void ThresholdKernel(uint32_t noelems, float const *inputs,
 DEFINE_STEPWISE_FUNC_FORWARD2(Threshold, float, float);
 DEFINE_STEPWISE_FUNC_BACKWARD(Threshold);
 
+template <typename Fn>
+__global__ void StepwiseKernel(uint32_t noelems, float const *inputs,
+                               float *outputs, uint8_t *state, int32_t nobits,
+                               float const *bounds, Fn fn) {
+    auto idx = 0;
+    auto len = (1 << nobits) - 1;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        idx = BinarySearch(len, inputs[tid], bounds); // Or LinearSearch.
+        outputs[tid] = fn(inputs[tid]);
+    }
+
+    // We should call per warp deflate kernel in order to properly communicate
+    // among threads in the same warp.
+    DeflateWarpKernel(nobits, idx, state);
+}
+
+void Celu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
+          uint32_t nobits, float const *bounds, float alpha) {
+    using T = float;
+    auto fn = [alpha] __device__(T x) {
+        auto constexpr zero = T(0);
+        auto constexpr one = T(1);
+        return std::max(zero, x) +
+               std::min(zero, alpha * (std::exp(x / alpha) - one));
+    };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Elu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
+         uint32_t nobits, float const *bounds, double alpha) {
+    auto fn = [alpha] __device__(auto x) {
+        return alpha > 0 ? x : alpha * (std::exp(x) - 1);
+    };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Gelu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
+          uint32_t nobits, float const *bounds, bool approximate) {
+    auto fn = [] __device__(auto x) { return x * normcdf(x); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Hardswish(uint32_t noelems, float const *inputs, float *outputs,
+               uint8_t *state, uint32_t nobits, float const *bounds) {
+    using T = float;
+    auto fn = [] __device__(T x) -> T {
+        if (x <= -3.0) {
+            return 0;
+        } else if (x >= 3.0) {
+            return x;
+        } else {
+            return x * (x + 3) / 6;
+        }
+    };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void LogSigmoid(uint32_t noelems, float const *inputs, float *outputs,
+                uint8_t *state, uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return -std::log(1 + std::exp(-x)); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+template <typename T>
+__device__ T CalcSoftplus(T value, T beta = 1.0, T threshold = 20.0) {
+    if (beta * value > threshold) {
+        return value;
+    } else {
+        return std::log(1 + std::exp(beta * value)) / beta;
+    }
+}
+
+void Mish(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
+          uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return x * std::tanh(CalcSoftplus(x)); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Selu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
+          uint32_t nobits, float const *bounds) {
+    using T = float;
+    auto constexpr alpha = T(1.6732632423543772848170429916717);
+    auto constexpr scale = T(1.0507009873554804934193349852946);
+    auto fn = [alpha, scale] __device__(auto x) {
+        auto constexpr zero = T(0);
+        auto lhs = std::max(zero, x);
+        auto rhs = std::min(zero, alpha * (std::exp(x) - 1));
+        return scale * (lhs + rhs);
+    };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Sigmoid(uint32_t noelems, float const *inputs, float *outputs,
+             uint8_t *state, uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return 1 / (1 + std::exp(-x)); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Silu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
+          uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return 1 / (1 + std::exp(-x)); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Softplus(uint32_t noelems, float const *inputs, float *outputs,
+              uint8_t *state, uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return CalcSoftplus(x); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Softsign(uint32_t noelems, float const *inputs, float *outputs,
+              uint8_t *state, uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return x / (1 + std::abs(x)); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Tanh(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
+          uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return std::tanh(x); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+void Tanhshrink(uint32_t noelems, float const *inputs, float *outputs,
+                uint8_t *state, uint32_t nobits, float const *bounds) {
+    auto fn = [] __device__(auto x) { return x - std::tanh(x); };
+    DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
+                             state, nobits, bounds, fn);
+}
+
+__global__ void StepwiseBackwardKernel(uint32_t noelems, uint8_t const *state,
+                                       float const *outgrads, float *ingrads,
+                                       int32_t nobits, float const *levels) {
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        auto idx = InflateWarpKernel(nobits, state);
+        ingrads[tid] = levels[idx] * outgrads[tid];
+    }
+}
+
+void StepwiseBackward(uint32_t noelems, uint8_t const *state,
+                      float const *outgrads, float *ingrads, int32_t nobits,
+                      float const *levels) {
+    DEFINE_KERNEL_INVOCATION(StepwiseBackwardKernel, noelems, noelems, state,
+                             outgrads, ingrads, nobits, levels);
+}
+
 } // namespace fewbit
