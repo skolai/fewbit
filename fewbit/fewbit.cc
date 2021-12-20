@@ -7,13 +7,13 @@ TORCH_LIBRARY(fewbit, m) {
     m.def("quantize_backward", fewbit::QuantizeBackward);
 
     /* clang-format off */
-    m.def("hardshrink (Tensor(a!) self, float lambda) -> Tensor(a!)");
+    m.def("hardshrink (Tensor(a!) self, float lambd = 0.5) -> Tensor(a!)");
     m.def("hardsigmoid(Tensor(a!) self) -> Tensor(a!)");
-    m.def("hardtanh   (Tensor(a!) self, float min_val, float max_val) -> Tensor(a!)");
-    m.def("leaky_relu (Tensor(a!) self, float negative_slope) -> Tensor(a!)");
+    m.def("hardtanh   (Tensor(a!) self, float min_val = -1.0, float max_val = 1.0) -> Tensor(a!)");
+    m.def("leaky_relu (Tensor(a!) self, float negative_slope = 0.01) -> Tensor(a!)");
     m.def("relu       (Tensor(a!) self) -> Tensor(a!)");
     m.def("relu6      (Tensor(a!) self) -> Tensor(a!)");
-    m.def("softshrink (Tensor(a!) self, float lambda) -> Tensor(a!)");
+    m.def("softshrink (Tensor(a!) self, float lambd = 0.5) -> Tensor(a!)");
     m.def("threshold  (Tensor(a!) self, float threshold, float value) -> Tensor(a!)");
     /* clang-format on */
 

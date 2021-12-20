@@ -375,16 +375,33 @@ __global__ void HardsigmoidKernel(uint32_t noelems, float const *inputs,
 }
 
 DEFINE_STEPWISE_FUNC_FORWARD0(Hardsigmoid);
-DEFINE_STEPWISE_FUNC_BACKWARD(Hardsigmoid);
+
+__global__ void HardsigmoidBackwardKernel(uint32_t noelems,
+                                          uint8_t const *state,
+                                          float const *outgrads,
+                                          float *ingrads) {
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        auto indx = InflateWarpKernel(1, state);
+        auto mult = indx ? 1.0f / 6.0f : 0.0f;
+        ingrads[tid] = mult * outgrads[tid];
+    }
+}
+
+void HardsigmoidBackward(uint32_t noelems, uint8_t const *state,
+                         float const *outgrads, float *ingrads) {
+    DEFINE_KERNEL_TOPOLOGY(noelems);
+    HardsigmoidBackwardKernel<<<noblocks, nothreads>>>(noelems, state, outgrads,
+                                                       ingrads);
+}
 
 __global__ void HardtanhKernel(uint32_t noelems, float const *inputs,
                                float *outputs, uint8_t *state, float min_val,
                                float max_val) {
     auto index = 0;
     if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
-        if (inputs[tid] < min_val) {
+        if (inputs[tid] <= min_val) {
             outputs[tid] = min_val;
-        } else if (inputs[tid] > max_val) {
+        } else if (inputs[tid] >= max_val) {
             outputs[tid] = max_val;
         } else {
             outputs[tid] = inputs[tid];
@@ -406,6 +423,7 @@ __global__ void LeakyReluKernel(uint32_t noelems, float const *inputs,
             outputs[tid] = inputs[tid];
         } else {
             outputs[tid] = negative_slope * inputs[tid];
+            index = 1;
         }
     }
     DeflateWarpKernel(1, index, state);
@@ -418,7 +436,7 @@ __global__ void LeakyReluBackwardKernel(uint32_t noelems, uint8_t const *state,
                                         float negative_slope) {
     if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
         auto indx = InflateWarpKernel(1, state);
-        auto mult = indx ? 1.0 : negative_slope;
+        auto mult = indx ? negative_slope : 1.0;
         ingrads[tid] = mult * outgrads[tid];
     }
 }

@@ -112,7 +112,7 @@ public:
         HardtanhBackward(grad_output[0].numel(), state[0].data_ptr<uint8_t>(),
                          grad_output[0].data_ptr<float>(),
                          grad_input.data_ptr<float>());
-        return {grad_input, torch::Tensor()};
+        return {grad_input, torch::Tensor(), torch::Tensor()};
     }
 };
 
@@ -191,7 +191,7 @@ public:
         ReluBackward(grad_output[0].numel(), state[0].data_ptr<uint8_t>(),
                      grad_output[0].data_ptr<float>(),
                      grad_input.data_ptr<float>());
-        return {grad_input, torch::Tensor()};
+        return {grad_input};
     }
 };
 
@@ -227,7 +227,7 @@ public:
         Relu6Backward(grad_output[0].numel(), state[0].data_ptr<uint8_t>(),
                       grad_output[0].data_ptr<float>(),
                       grad_input.data_ptr<float>());
-        return {grad_input, torch::Tensor()};
+        return {grad_input};
     }
 };
 
@@ -304,7 +304,7 @@ public:
         ThresholdBackward(grad_output[0].numel(), state[0].data_ptr<uint8_t>(),
                           grad_output[0].data_ptr<float>(),
                           grad_input.data_ptr<float>());
-        return {grad_input, torch::Tensor()};
+        return {grad_input, torch::Tensor(), torch::Tensor()};
     }
 };
 
