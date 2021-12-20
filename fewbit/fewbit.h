@@ -7,4 +7,5 @@
 #pragma once
 
 #include <fewbit/cpu/gelu.h>
+#include <fewbit/cuda/activation.h>
 #include <fewbit/cuda/gelu.h>

@@ -17,9 +17,11 @@ target_link_libraries("fewbit-cuda" PUBLIC torch)
 
 target_sources("fewbit-cuda"
     PRIVATE
+        activation.cc
         codec.cu
         gelu.cc
     PUBLIC
+        activation.h
         codec.h
         gelu.h)
 

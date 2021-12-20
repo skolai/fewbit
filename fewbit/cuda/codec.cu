@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 
 namespace fewbit {
 
@@ -264,5 +265,243 @@ void GeluBackward(uint32_t noelems, int32_t nobits, float const *levels,
     GeluBackwardKernel<<<noblocks, nothreads>>>(nobits, noelems, levels, state,
                                                 outgrads, ingrads);
 }
+
+/**
+ * First of all, we want to introduce some macro definitions to avoid redundant
+ * repeating in CUDA kernel declarations for stepwise activation functions.
+ * Since all kernels below are element-wiseand share the same lattice topology
+ * on device, we define routines for kernel invocation.
+ */
+
+#define DEFINE_KERNEL_TOPOLOGY(var)                                            \
+    assert(var > 0);                                                           \
+    auto nogroups = (var - 1) / kWarpSize + 1;                                 \
+    dim3 noblocks((var - 1) / kThreadsPerBlock + 1);                           \
+    dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize *nogroups))
+
+#define DEFINE_KERNEL_INVOCATION(kernel, numel, ...)                           \
+    {                                                                          \
+        DEFINE_KERNEL_TOPOLOGY(numel);                                         \
+        kernel<<<noblocks, nothreads>>>(__VA_ARGS__);                          \
+    }
+
+/**
+ * The only difference between forward pass kernels is a number of auxiliary
+ * parameters. In case of 1-bit stepwise activation function the number of such
+ * parameters does not exceed two. So, we can avoid this regularity with
+ * a bunch of macroses.
+ */
+
+#define DEFINE_STEPWISE_FUNC_FORWARD(name)                                     \
+    void name(uint32_t noelems, float const *inputs, float *outputs,           \
+              uint8_t *state) {                                                \
+        DEFINE_KERNEL_INVOCATION(name##Kernel, noelems, noelems, inputs,       \
+                                 outputs, state);                              \
+    }
+
+#define DEFINE_STEPWISE_FUNC_FORWARD0(name) DEFINE_STEPWISE_FUNC_FORWARD(name)
+
+#define DEFINE_STEPWISE_FUNC_FORWARD1(name, type)                              \
+    void name(uint32_t noelems, float const *inputs, float *outputs,           \
+              uint8_t *state, type arg) {                                      \
+        DEFINE_KERNEL_INVOCATION(name##Kernel, noelems, noelems, inputs,       \
+                                 outputs, state, arg);                         \
+    }
+
+#define DEFINE_STEPWISE_FUNC_FORWARD2(name, type1, type2)                      \
+    void name(uint32_t noelems, float const *inputs, float *outputs,           \
+              uint8_t *state, type1 arg1, type2 arg2) {                        \
+        DEFINE_KERNEL_INVOCATION(name##Kernel, noelems, noelems, inputs,       \
+                                 outputs, state, arg1, arg2);                  \
+    }
+
+#define DEFINE_STEPWISE_FUNC_BACKWARD_KERNEL(name)                             \
+    __global__ void name##BackwardKernel(                                      \
+        uint32_t noelems, uint8_t const *state,                                \
+        float const *__restrict__ outgrads, float *__restrict__ ingrads) {     \
+        if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) { \
+            auto idx = InflateWarpKernel(1, state);                            \
+            ingrads[tid] = idx * outgrads[tid];                                \
+        }                                                                      \
+    }
+
+/**
+ * Almost all kernels for backward pass are the same. We either let gradients
+ * to pass or not. The only exception is leaky ReLU with custom negative slope.
+ */
+
+#define DEFINE_STEPWISE_FUNC_BACKWARD_FUNC(name)                               \
+    void name##Backward(uint32_t noelems, uint8_t const *state,                \
+                        float const *outgrads, float *ingrads) {               \
+        DEFINE_KERNEL_INVOCATION(name##BackwardKernel, noelems, noelems,       \
+                                 state, outgrads, ingrads);                    \
+    }
+
+#define DEFINE_STEPWISE_FUNC_BACKWARD(name)                                    \
+    DEFINE_STEPWISE_FUNC_BACKWARD_KERNEL(name)                                 \
+    DEFINE_STEPWISE_FUNC_BACKWARD_FUNC(name)
+
+__global__ void HardshrinkKernel(uint32_t noelems, float const *inputs,
+                                 float *outputs, uint8_t *state, float lambda) {
+    auto index = 1;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] < -lambda || inputs[tid] > lambda) {
+            outputs[tid] = inputs[tid];
+        } else {
+            outputs[tid] = 0.0;
+            index = 0;
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD1(Hardshrink, float);
+DEFINE_STEPWISE_FUNC_BACKWARD(Hardshrink);
+
+__global__ void HardsigmoidKernel(uint32_t noelems, float const *inputs,
+                                  float *outputs, uint8_t *state) {
+    auto index = 0;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] <= -3.0) {
+            outputs[tid] = 0.0;
+        } else if (inputs[tid] >= 3.0) {
+            outputs[tid] = 1.0;
+        } else {
+            outputs[tid] = inputs[tid] / 6 + 0.5;
+            index = 1;
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD0(Hardsigmoid);
+DEFINE_STEPWISE_FUNC_BACKWARD(Hardsigmoid);
+
+__global__ void HardtanhKernel(uint32_t noelems, float const *inputs,
+                               float *outputs, uint8_t *state, float min_val,
+                               float max_val) {
+    auto index = 0;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] < min_val) {
+            outputs[tid] = min_val;
+        } else if (inputs[tid] > max_val) {
+            outputs[tid] = max_val;
+        } else {
+            outputs[tid] = inputs[tid];
+            index = 1;
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD2(Hardtanh, float, float);
+DEFINE_STEPWISE_FUNC_BACKWARD(Hardtanh);
+
+__global__ void LeakyReluKernel(uint32_t noelems, float const *inputs,
+                                float *outputs, uint8_t *state,
+                                float negative_slope) {
+    auto index = 0;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] >= 0) {
+            outputs[tid] = inputs[tid];
+        } else {
+            outputs[tid] = negative_slope * inputs[tid];
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD1(LeakyRelu, float);
+
+__global__ void LeakyReluBackwardKernel(uint32_t noelems, uint8_t const *state,
+                                        float const *outgrads, float *ingrads,
+                                        float negative_slope) {
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        auto indx = InflateWarpKernel(1, state);
+        auto mult = indx ? 1.0 : negative_slope;
+        ingrads[tid] = mult * outgrads[tid];
+    }
+}
+
+void LeakyReluBackward(uint32_t noelems, uint8_t const *state,
+                       float const *outgrads, float *ingrads,
+                       float negative_slope) {
+    DEFINE_KERNEL_TOPOLOGY(noelems);
+    LeakyReluBackwardKernel<<<noblocks, nothreads>>>(noelems, state, outgrads,
+                                                     ingrads, negative_slope);
+}
+
+__global__ void ReluKernel(uint32_t noelems, float const *inputs,
+                           float *outputs, uint8_t *state) {
+    auto index = 0;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] <= 0) {
+            outputs[tid] = 0.0;
+        } else {
+            outputs[tid] = inputs[tid];
+            index = 1;
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD0(Relu);
+DEFINE_STEPWISE_FUNC_BACKWARD(Relu);
+
+__global__ void Relu6Kernel(uint32_t noelems, float const *inputs,
+                            float *outputs, uint8_t *state) {
+    auto index = 0;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] <= 0.0) {
+            outputs[tid] = 0.0;
+        } else if (inputs[tid] >= 6.0) {
+            outputs[tid] = 1.0;
+        } else {
+            outputs[tid] = inputs[tid];
+            index = 1;
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD0(Relu6);
+DEFINE_STEPWISE_FUNC_BACKWARD(Relu6);
+
+__global__ void SoftshrinkKernel(uint32_t noelems, float const *inputs,
+                                 float *outputs, uint8_t *state, float lambda) {
+    auto index = 1;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] < -lambda) {
+            outputs[tid] = inputs[tid] + lambda;
+        } else if (inputs[tid] > lambda) {
+            outputs[tid] = inputs[tid] - lambda;
+        } else {
+            outputs[tid] = 0.0;
+            index = 0;
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD1(Softshrink, float);
+DEFINE_STEPWISE_FUNC_BACKWARD(Softshrink);
+
+__global__ void ThresholdKernel(uint32_t noelems, float const *inputs,
+                                float *outputs, uint8_t *state, float threshold,
+                                float value) {
+    auto index = 0;
+    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+        if (inputs[tid] <= threshold) {
+            outputs[tid] = value;
+        } else {
+            outputs[tid] = inputs[tid];
+            index = 1;
+        }
+    }
+    DeflateWarpKernel(1, index, state);
+}
+
+DEFINE_STEPWISE_FUNC_FORWARD2(Threshold, float, float);
+DEFINE_STEPWISE_FUNC_BACKWARD(Threshold);
 
 } // namespace fewbit
