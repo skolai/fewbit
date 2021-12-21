@@ -181,35 +181,6 @@ void DeflateBlock(int32_t nobits, uint32_t noelems, int32_t const *input,
     DeflateBlockKernel<<<noblocks, nothreads>>>(nobits, noelems, input, data);
 }
 
-__device__ inline float CalcGelu(float val) {
-    return val * normcdf(val);
-}
-
-__global__ void GeluKernel(int32_t nobits, uint32_t noelems,
-                           float const *bounds, float const *inputs,
-                           float *outputs, uint8_t *state) {
-    auto len = (1 << nobits) - 1;
-    auto idx = 0;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
-        outputs[tid] = CalcGelu(inputs[tid]);
-        idx = BinarySearch(len, inputs[tid], bounds); // Or LinearSearch.
-    }
-
-    // We should call per warp deflate kernel in order to properly communicate
-    // among threads in the same warp.
-    DeflateWarpKernel(nobits, idx, state);
-}
-
-void Gelu(uint32_t noelems, int32_t nobits, float const *bounds,
-          float const *inputs, float *outputs, uint8_t *state) {
-    assert(noelems > 0); // Assert only non-empty sequences.
-    auto nogroups = (noelems - 1) / kWarpSize + 1;
-    dim3 noblocks((noelems - 1) / kThreadsPerBlock + 1);
-    dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize * nogroups));
-    GeluKernel<<<noblocks, nothreads>>>(nobits, noelems, bounds, inputs,
-                                        outputs, state);
-}
-
 __device__ int32_t InflateWarpKernel(int32_t nobits, uint8_t const *data) {
     auto constexpr maxwidth = CodecTrait<uint8_t>::kMaxBitWidth;
     auto const mask = CodecTrait<uint8_t>::GetMask(nobits);
@@ -245,25 +216,6 @@ void InflateBlock(int32_t nobits, uint32_t noelems, uint8_t const *data,
     dim3 noblocks((noelems - 1) / kThreadsPerBlock + 1);
     dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize * nogroups));
     InflateBlockKernel<<<noblocks, nothreads>>>(nobits, noelems, data, output);
-}
-
-__global__ void GeluBackwardKernel(int32_t nobits, uint32_t noelems,
-                                   float const *levels, uint8_t const *state,
-                                   float const *outgrads, float *ingrads) {
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
-        auto idx = InflateWarpKernel(nobits, state);
-        ingrads[tid] = levels[idx] * outgrads[tid];
-    }
-}
-
-void GeluBackward(uint32_t noelems, int32_t nobits, float const *levels,
-                  uint8_t const *state, float const *outgrads, float *ingrads) {
-    assert(noelems > 0); // Assert only non-empty sequences.
-    auto nogroups = (noelems - 1) / kWarpSize + 1;
-    dim3 noblocks((noelems - 1) / kThreadsPerBlock + 1);
-    dim3 nothreads(std::min(kThreadsPerBlock, kWarpSize * nogroups));
-    GeluBackwardKernel<<<noblocks, nothreads>>>(nobits, noelems, levels, state,
-                                                outgrads, ingrads);
 }
 
 /**
@@ -538,14 +490,23 @@ __global__ void StepwiseKernel(uint32_t noelems, float const *inputs,
     DeflateWarpKernel(nobits, idx, state);
 }
 
+template <typename T>
+__device__ T CalcElu(T val, T scale_pos, T scale_neg, T scale_exp) {
+    auto constexpr zero = T(0);
+    auto constexpr one = T(1);
+    if (val > zero) {
+        return scale_pos * val;
+    } else {
+        return scale_neg * (std::exp(scale_exp * val) - one);
+    }
+}
+
 void Celu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
-          uint32_t nobits, float const *bounds, float alpha) {
+          uint32_t nobits, float const *bounds, double alpha) {
     using T = float;
-    auto fn = [alpha] __device__(T x) {
-        auto constexpr zero = T(0);
-        auto constexpr one = T(1);
-        return std::max(zero, x) +
-               std::min(zero, alpha * (std::exp(x / alpha) - one));
+    auto const alpha_inv = static_cast<T>(1 / alpha);
+    auto fn = [alpha = T(alpha), alpha_inv] __device__(T x) {
+        return CalcElu(x, T(1), alpha, alpha_inv);
     };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
@@ -553,15 +514,17 @@ void Celu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
 
 void Elu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
          uint32_t nobits, float const *bounds, double alpha) {
-    auto fn = [alpha] __device__(auto x) {
-        return alpha > 0 ? x : alpha * (std::exp(x) - 1);
+    using T = float;
+    auto fn = [alpha = T(alpha)] __device__(auto x) {
+        auto constexpr one = T(1);
+        return CalcElu(x, one, alpha, one);
     };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
 }
 
 void Gelu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
-          uint32_t nobits, float const *bounds, bool approximate) {
+          uint32_t nobits, float const *bounds) {
     auto fn = [] __device__(auto x) { return x * normcdf(x); };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
@@ -570,13 +533,17 @@ void Gelu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
 void Hardswish(uint32_t noelems, float const *inputs, float *outputs,
                uint8_t *state, uint32_t nobits, float const *bounds) {
     using T = float;
-    auto fn = [] __device__(T x) -> T {
+    auto fn = [] __device__(auto x) {
+        // Alternative way to compute is
+        //  x * std::min(std::max(x + 3, 0), six) / 6
+        auto constexpr six_inv = T(1.0 / 6.0);
+        auto constexpr three = T(3.0);
         if (x <= -3.0) {
-            return 0;
+            return T(0);
         } else if (x >= 3.0) {
             return x;
         } else {
-            return x * (x + 3) / 6;
+            return six_inv * x * (x + three);
         }
     };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
@@ -585,23 +552,22 @@ void Hardswish(uint32_t noelems, float const *inputs, float *outputs,
 
 void LogSigmoid(uint32_t noelems, float const *inputs, float *outputs,
                 uint8_t *state, uint32_t nobits, float const *bounds) {
-    auto fn = [] __device__(auto x) { return -std::log(1 + std::exp(-x)); };
+    using T = float;
+    auto fn = [] __device__(auto x) {
+        auto constexpr zero = T(0);
+        auto y = std::exp(-std::abs(x));
+        return std::min(zero, x) - std::log1p(y);
+    };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
 }
 
-template <typename T>
-__device__ T CalcSoftplus(T value, T beta = 1.0, T threshold = 20.0) {
-    if (beta * value > threshold) {
-        return value;
-    } else {
-        return std::log(1 + std::exp(beta * value)) / beta;
-    }
-}
-
 void Mish(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
           uint32_t nobits, float const *bounds) {
-    auto fn = [] __device__(auto x) { return x * std::tanh(CalcSoftplus(x)); };
+    auto fn = [] __device__(auto x) {
+        auto y = std::log1p(std::exp(x));
+        return x * std::tanh(y);
+    };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
 }
@@ -609,13 +575,12 @@ void Mish(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
 void Selu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
           uint32_t nobits, float const *bounds) {
     using T = float;
-    auto constexpr alpha = T(1.6732632423543772848170429916717);
-    auto constexpr scale = T(1.0507009873554804934193349852946);
-    auto fn = [alpha, scale] __device__(auto x) {
-        auto constexpr zero = T(0);
-        auto lhs = std::max(zero, x);
-        auto rhs = std::min(zero, alpha * (std::exp(x) - 1));
-        return scale * (lhs + rhs);
+    auto constexpr alpha = 1.6732632423543772848170429916717;
+    auto constexpr scale = 1.0507009873554804934193349852946;
+    auto constexpr scale_pos = T(scale);
+    auto constexpr scale_neg = static_cast<T>(scale * alpha);
+    auto fn = [scale_pos, scale_neg] __device__(auto x) {
+        return CalcElu(x, scale_pos, scale_neg, T(1));
     };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
@@ -630,14 +595,25 @@ void Sigmoid(uint32_t noelems, float const *inputs, float *outputs,
 
 void Silu(uint32_t noelems, float const *inputs, float *outputs, uint8_t *state,
           uint32_t nobits, float const *bounds) {
-    auto fn = [] __device__(auto x) { return 1 / (1 + std::exp(-x)); };
+    auto fn = [] __device__(auto x) { return x / (1 + std::exp(-x)); };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
 }
 
 void Softplus(uint32_t noelems, float const *inputs, float *outputs,
-              uint8_t *state, uint32_t nobits, float const *bounds) {
-    auto fn = [] __device__(auto x) { return CalcSoftplus(x); };
+              uint8_t *state, uint32_t nobits, float const *bounds, double beta,
+              double threshold) {
+    using T = float;
+    auto const beta_inv = static_cast<T>(1 / beta);
+    auto const beta_t = static_cast<T>(beta);
+    auto const threshold_t = static_cast<T>(threshold);
+    auto fn = [beta_inv, beta_t, threshold_t] __device__(auto x) {
+        if (beta_t * x > threshold_t) {
+            return x;
+        } else {
+            return beta_inv * std::log1p(std::exp(beta_t * x));
+        }
+    };
     DEFINE_KERNEL_INVOCATION(StepwiseKernel, noelems, noelems, inputs, outputs,
                              state, nobits, bounds, fn);
 }

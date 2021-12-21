@@ -18,8 +18,8 @@ TORCH_LIBRARY(fewbit, m) {
     /* clang-format on */
 
     /* clang-format off */
-    m.def("celu      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
-    m.def("elu       (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
+    m.def("celu      (Tensor(a!) self, Tensor bounds, Tensor levels, float alpha = 1.0) -> Tensor(a!)");
+    m.def("elu       (Tensor(a!) self, Tensor bounds, Tensor levels, float alpha = 1.0) -> Tensor(a!)");
     m.def("gelu      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("hardswish (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("logsigmoid(Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
@@ -27,7 +27,7 @@ TORCH_LIBRARY(fewbit, m) {
     m.def("selu      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("sigmoid   (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("silu      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
-    m.def("softplus  (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
+    m.def("softplus  (Tensor(a!) self, Tensor bounds, Tensor levels, float beta, float threshold) -> Tensor(a!)");
     m.def("softsign  (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("tanh      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("tanhshrink(Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");

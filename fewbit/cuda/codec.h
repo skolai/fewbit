@@ -21,12 +21,6 @@ void Inflate(int32_t nobits, int32_t *begin, int32_t *end, uint8_t const *inp);
 void InflateBlock(int32_t nobits, uint32_t noelems, uint8_t const *data,
                   int32_t *output);
 
-void Gelu(uint32_t noelems, int32_t nobits, float const *bounds,
-          float const *inputs, float *outputs, uint8_t *state);
-
-void GeluBackward(uint32_t noelems, int32_t nobits, float const *levels,
-                  uint8_t const *state, float const *outgrads, float *ingrads);
-
 /**
  * Almost all stepwise activation functions (except leaky ReLU) has the same
  * signature and very similar implementations. So, we can use unified machinery
@@ -83,16 +77,16 @@ DECLARE_STEPWISE_FUNC_FORWARD(LeakyRelu, float negative_slope);
               uint8_t *state, uint32_t nobits,                                 \
               float const *bounds __VA_OPT__(, __VA_ARGS__))
 
-DECLARE_CONTINOUS_FUNC(Celu, float alpha);
-DECLARE_CONTINOUS_FUNC(Elu, float alpha);
-DECLARE_CONTINOUS_FUNC(Gelu, bool approximate = false);
+DECLARE_CONTINOUS_FUNC(Celu, double alpha);
+DECLARE_CONTINOUS_FUNC(Elu, double alpha);
+DECLARE_CONTINOUS_FUNC(Gelu);
 DECLARE_CONTINOUS_FUNC(Hardswish);
 DECLARE_CONTINOUS_FUNC(LogSigmoid);
 DECLARE_CONTINOUS_FUNC(Mish);
 DECLARE_CONTINOUS_FUNC(Selu);
 DECLARE_CONTINOUS_FUNC(Sigmoid);
 DECLARE_CONTINOUS_FUNC(Silu);
-DECLARE_CONTINOUS_FUNC(Softplus, float beta, float threshold);
+DECLARE_CONTINOUS_FUNC(Softplus, double beta, double threshold);
 DECLARE_CONTINOUS_FUNC(Softsign);
 DECLARE_CONTINOUS_FUNC(Tanh);
 DECLARE_CONTINOUS_FUNC(Tanhshrink);

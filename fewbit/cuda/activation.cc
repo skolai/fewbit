@@ -313,7 +313,121 @@ torch::Tensor ThresholdCuda(torch::Tensor const &inputs, double threshold,
     return ThresholdCudaFunction::apply(inputs, threshold, value);
 }
 
+/**
+ * Class ContinousCudaFunction is parametrized with some type T, which has
+ * static method Invoke. The only purpose of static method of type T is to
+ * dispatch call to actual function which corresponds to type T.
+ */
+template <typename T>
+class ContinousCudaFunction
+    : public torch::autograd::Function<ContinousCudaFunction<T>> {
+private:
+    static auto constexpr kMaxBitWidth = 8;
+
+public:
+    template <typename... Args>
+    static torch::Tensor forward(torch::autograd::AutogradContext *ctx,
+                                 torch::Tensor const &inputs,
+                                 torch::Tensor const &bounds,
+                                 torch::Tensor const &levels, Args &&...args) {
+        auto nobits = static_cast<int32_t>(std::log2(bounds.numel()) + 0.5);
+        auto nogroups = (inputs.numel() - 1) / kMaxBitWidth + 1;
+        auto buffer_len = nobits * nogroups;
+        auto buffer_opt = torch::TensorOptions()
+                              .device(inputs.device())
+                              .memory_format(torch::MemoryFormat::Contiguous)
+                              .dtype(torch::kU8);
+        auto buffer = torch::empty({buffer_len}, buffer_opt);
+        ctx->mark_dirty({inputs});
+        ctx->save_for_backward({buffer, levels});
+        T::Invoke(inputs.numel(), inputs.data_ptr<float>(),
+                  inputs.data_ptr<float>(), buffer.data_ptr<uint8_t>(), nobits,
+                  bounds.data_ptr<float>(), std::forward<Args>(args)...);
+        return inputs;
+    }
+
+    static torch::autograd::variable_list
+    backward(torch::autograd::AutogradContext *ctx,
+             torch::autograd::variable_list grad_output) {
+        auto state = ctx->get_saved_variables();
+        auto nobits = static_cast<int32_t>(std::log2(state[0].numel()) + 0.5);
+        // All continous activation functions have the same pattern in their
+        // signatures: all auxiliary parameters are appened to the end.
+        auto constexpr nograds_base = 3;
+        auto constexpr nograds = T::kNoArgs - nograds_base;
+        torch::autograd::variable_list grad_input(nograds);
+        grad_input[0] = torch::empty_like(grad_output[0]);
+        StepwiseBackward(grad_output[0].numel(), state[0].data_ptr<uint8_t>(),
+                         grad_output[0].data_ptr<float>(),
+                         grad_input[0].data_ptr<float>(), nobits,
+                         state[1].data_ptr<float>());
+        return grad_input;
+    }
+};
+
+/**
+ * This macro definition is used to bind a specific CUDA kernel launcher to a
+ * specific type. This is how we dispatch functions at compile-time. We assume
+ * that there is only one kernel launcher with that name (no overloads).
+ */
+
+template <typename Ret, typename... Args>
+constexpr auto CountFunctionArgs(Ret(Args...)) {
+    return sizeof...(Args);
+}
+
+#define DEFINE_STATIC_DISPATCH(name)                                           \
+    struct name##Impl {                                                        \
+        static auto constexpr kFuncPtr = name;                                 \
+        static auto constexpr kNoArgs = CountFunctionArgs(name);               \
+        template <typename... Args> static auto Invoke(Args &&...args) {       \
+            return name(std::forward<Args>(args)...);                          \
+        }                                                                      \
+    }
+
+/**
+ * This bunch of macros are aimed to define PyTorch-functions and bind it to
+ * actual implementation.
+ */
+
+#define DEFINE_CONTINOUS_TORCH_FUNC_BODY(name, ...)                            \
+    return ContinousCudaFunction<name##Impl>::apply(                           \
+        inputs, bounds, levels __VA_OPT__(, __VA_ARGS__))
+
+#define DEFINE_CONTINOUS_TORCH_FUNC0(name)                                     \
+    DEFINE_STATIC_DISPATCH(name);                                              \
+    DECLARE_CONTINOUS_TORCH_FUNC(name) {                                       \
+        DEFINE_CONTINOUS_TORCH_FUNC_BODY(name);                                \
+    }
+
+#define DEFINE_CONTINOUS_TORCH_FUNC1(name, type1)                              \
+    DEFINE_STATIC_DISPATCH(name);                                              \
+    DECLARE_CONTINOUS_TORCH_FUNC(name, type1 arg1) {                           \
+        DEFINE_CONTINOUS_TORCH_FUNC_BODY(name, arg1);                          \
+    }
+
+#define DEFINE_CONTINOUS_TORCH_FUNC2(name, type1, type2)                       \
+    DEFINE_STATIC_DISPATCH(name);                                              \
+    DECLARE_CONTINOUS_TORCH_FUNC(name, type1 arg1, type2 arg2) {               \
+        DEFINE_CONTINOUS_TORCH_FUNC_BODY(name, arg1, arg2);                    \
+    }
+
+DEFINE_CONTINOUS_TORCH_FUNC1(Celu, double);
+DEFINE_CONTINOUS_TORCH_FUNC1(Elu, double);
+DEFINE_CONTINOUS_TORCH_FUNC0(Gelu);
+DEFINE_CONTINOUS_TORCH_FUNC0(Hardswish);
+DEFINE_CONTINOUS_TORCH_FUNC0(LogSigmoid);
+DEFINE_CONTINOUS_TORCH_FUNC0(Mish);
+DEFINE_CONTINOUS_TORCH_FUNC0(Selu);
+DEFINE_CONTINOUS_TORCH_FUNC0(Sigmoid);
+DEFINE_CONTINOUS_TORCH_FUNC0(Silu);
+DEFINE_CONTINOUS_TORCH_FUNC2(Softplus, double, double);
+DEFINE_CONTINOUS_TORCH_FUNC0(Softsign);
+DEFINE_CONTINOUS_TORCH_FUNC0(Tanh);
+DEFINE_CONTINOUS_TORCH_FUNC0(Tanhshrink);
+
 TORCH_LIBRARY_IMPL(fewbit, AutogradCUDA, m) {
+    // Stepwise functions.
     m.impl("hardshrink", fewbit::HardshrinkCuda);
     m.impl("hardsigmoid", fewbit::HardsigmoidCuda);
     m.impl("hardtanh", fewbit::HardtanhCuda);
@@ -322,6 +436,21 @@ TORCH_LIBRARY_IMPL(fewbit, AutogradCUDA, m) {
     m.impl("relu6", fewbit::Relu6Cuda);
     m.impl("softshrink", fewbit::SoftshrinkCuda);
     m.impl("threshold", fewbit::ThresholdCuda);
+
+    // Continous functions.
+    m.impl("celu", fewbit::CeluCuda);
+    m.impl("elu", fewbit::EluCuda);
+    m.impl("gelu", fewbit::GeluCuda);
+    m.impl("hardswish", fewbit::HardswishCuda);
+    m.impl("logsigmoid", fewbit::LogSigmoidCuda);
+    m.impl("mish", fewbit::MishCuda);
+    m.impl("selu", fewbit::SeluCuda);
+    m.impl("sigmoid", fewbit::SigmoidCuda);
+    m.impl("silu", fewbit::SiluCuda);
+    m.impl("softplus", fewbit::SoftplusCuda);
+    m.impl("softsign", fewbit::SoftsignCuda);
+    m.impl("tanh", fewbit::TanhCuda);
+    m.impl("tanhshrink", fewbit::TanhshrinkCuda);
 }
 
 } // namespace fewbit

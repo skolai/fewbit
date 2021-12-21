@@ -19,11 +19,9 @@ target_sources("fewbit-cuda"
     PRIVATE
         activation.cc
         codec.cu
-        gelu.cc
     PUBLIC
         activation.h
-        codec.h
-        gelu.h)
+        codec.h)
 
 
 # If CUDA is enabled then we force CUDA C++ standard and link primary target
