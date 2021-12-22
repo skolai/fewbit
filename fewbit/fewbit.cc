@@ -27,7 +27,7 @@ TORCH_LIBRARY(fewbit, m) {
     m.def("selu      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("sigmoid   (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("silu      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
-    m.def("softplus  (Tensor(a!) self, Tensor bounds, Tensor levels, float beta, float threshold) -> Tensor(a!)");
+    m.def("softplus  (Tensor(a!) self, Tensor bounds, Tensor levels, float beta = 1.0, float threshold = 20.0) -> Tensor(a!)");
     m.def("softsign  (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("tanh      (Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");
     m.def("tanhshrink(Tensor(a!) self, Tensor bounds, Tensor levels) -> Tensor(a!)");

@@ -1,12 +1,15 @@
+import numpy as np
 import torch as T
 import torch.nn.functional as F
 
 from unittest import TestCase, skip, skipUnless
 
+from fewbit.approx import StepWiseFunction, estimate_error
 from fewbit.functional import (hardshrink, hardsigmoid, hardtanh, leaky_relu,
-                               relu, relu6, softshrink, threshold)
-
-from fewbit.functional import store
+                               relu, relu6, softshrink, threshold, celu, elu,
+                               gelu, hardswish, logsigmoid, mish, selu,
+                               sigmoid, silu, softplus, softsign, tanh,
+                               tanhshrink, store)
 
 
 @skipUnless(T.cuda.is_available(), 'CUDA support is required.')
@@ -69,3 +72,74 @@ class TestStepwiseStore(TestCase):
     def test_load(self):
         self.assertGreater(len(store), 0)
         self.assertIsNotNone(store.get('gelu', 3))
+
+
+@skipUnless(T.cuda.is_available(), 'CUDA support is required.')
+class TestContinousFunctions(TestCase):
+
+    def _test_parametric(self, lhs, rhs, nobits, *args, **kwargs):
+        ps = self.xs.clone().requires_grad_()
+        ys = lhs(ps, *args, **kwargs)
+
+        qs = self.xs.clone().requires_grad_()
+        zs = rhs(qs.clone(), *args, **kwargs)
+
+        v_err = T.linalg.norm(zs - ys).item()
+        self.assertAlmostEqual(0, v_err, places=6)
+
+        # Estimate L2 approximation error.
+        def deriv_lhs(xs: np.ndarray) -> np.ndarray:
+            ys = T.tensor(xs).to(self.device).requires_grad_()
+            zs = lhs(ys.clone(), *args, **kwargs)
+            zs.backward(T.ones_like(ys))
+            return ys.grad.cpu().numpy()
+
+        entry = store.get(rhs.__name__, nobits)
+        deriv_rhs = StepWiseFunction(*[el.numpy() for el in entry])
+
+        g_err, _ = estimate_error(deriv_lhs, deriv_rhs, 1e-2)
+        self.assertAlmostEqual(0, g_err, places=1)
+
+    def setUp(self):
+        self.xs = T.linspace(-5, 5, 101).to('cuda')
+        self.gs = T.ones_like(self.xs)
+        self.device = self.xs.device
+
+    def test_celu(self):
+        self._test_parametric(F.celu, celu, 3)
+
+    def test_elu(self):
+        self._test_parametric(F.elu, elu, 3)
+
+    def test_gelu(self):
+        self._test_parametric(F.gelu, gelu, 3)
+
+    def test_hardswish(self):
+        self._test_parametric(F.hardswish, hardswish, 3)
+
+    def test_logsigmoid(self):
+        self._test_parametric(F.logsigmoid, logsigmoid, 3)
+
+    def test_mish(self):
+        self._test_parametric(F.mish, mish, 3)
+
+    def test_selu(self):
+        self._test_parametric(F.selu, selu, 3)
+
+    def test_sigmoid(self):
+        self._test_parametric(T.sigmoid, sigmoid, 3)
+
+    def test_silu(self):
+        self._test_parametric(F.silu, silu, 3)
+
+    def test_softplus(self):
+        self._test_parametric(F.softplus, softplus, 3)
+
+    def test_softsign(self):
+        self._test_parametric(F.softsign, softsign, 3)
+
+    def test_tanh(self):
+        self._test_parametric(T.tanh, tanh, 3)
+
+    def test_tanhshrink(self):
+        self._test_parametric(F.tanhshrink, tanhshrink, 3)

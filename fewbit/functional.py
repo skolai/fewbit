@@ -95,7 +95,8 @@ def dispatch(name, wrapper):
             Parameter('input', Parameter.POSITIONAL_ONLY, annotation=T.Tensor)
         ])
     params = [
-        param for param in sig.parameters.values() if param.name != 'inplace'
+        param for param in sig.parameters.values()
+        if param.name not in ('approximate', 'inplace')
     ]
     params.extend([
         Parameter('bits',
@@ -147,11 +148,9 @@ def dispatch(name, wrapper):
         values = bound_kwargs.pop('values')
 
         if use_builtin or not use_custom:
-            borders = T.tensor(())
-            values = T.tensor(())
             borders, values = store.get(name, bits, input.device, input.dtype)
 
-        return wrapper(input, borders.to(input), values.to(input),
+        return wrapper(input, borders[1:-1].to(input), values.to(input),
                        *bound_args[1:], **bound_kwargs)
 
     forward_call.__qualname__ = name
