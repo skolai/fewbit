@@ -6,6 +6,8 @@ from unittest import TestCase, skip, skipUnless
 from fewbit.functional import (hardshrink, hardsigmoid, hardtanh, leaky_relu,
                                relu, relu6, softshrink, threshold)
 
+from fewbit.functional import store
+
 
 @skipUnless(T.cuda.is_available(), 'CUDA support is required.')
 class TestStepwiseFunctions(TestCase):
@@ -26,7 +28,6 @@ class TestStepwiseFunctions(TestCase):
         self.assertAlmostEqual(0, g_err, places=6)
 
     def setUp(self):
-        print()
         self.xs = T.linspace(-5, 5, 101).to('cuda')
         self.gs = T.ones_like(self.xs)
 
@@ -61,3 +62,10 @@ class TestStepwiseFunctions(TestCase):
 
     def test_threshold(self):
         self._test_parametric(F.threshold, threshold, 1.0, 3.0)
+
+
+class TestStepwiseStore(TestCase):
+
+    def test_load(self):
+        self.assertGreater(len(store), 0)
+        self.assertIsNotNone(store.get('gelu', 3))

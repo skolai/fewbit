@@ -1,2 +1,5 @@
 # Only C++ and CUDA C++.
 *.h linguist-language=cpp
+
+# Mark precomputed quantization as a binary file.
+fewbit/data/builtin.npz binary
