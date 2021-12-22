@@ -57,8 +57,9 @@ def help_():
     parser.print_help()
 
 
-def quantize(max_iters: int, output: Optional[Path], seed: Optional[None],
-             nobits: int, spec: str):
+def quantize(border_error: float, level_error: float, max_iters: int,
+             output: Optional[Path], seed: Optional[None], nobits: int,
+             spec: str):
     logging.info('loading (primal) function from spec %s', spec)
     module_name, func_name = spec.split(':', 1)
     module = import_module(module_name)
@@ -88,8 +89,8 @@ def quantize(max_iters: int, output: Optional[Path], seed: Optional[None],
                               cardinality=2**nobits,
                               parity=False,
                               max_iters=max_iters,
-                              beps=1e-6,
-                              leps=1e-6,
+                              beps=border_error,
+                              leps=level_error,
                               domain=(-100, 100),
                               random_state=seed)
 
@@ -113,7 +114,8 @@ def quantize(max_iters: int, output: Optional[Path], seed: Optional[None],
             try:
                 with np.load(output) as npz:
                     kwargs_loaded = dict(npz)
-                kwargs.update(**kwargs_loaded)
+                kwargs_loaded.update(**kwargs)
+                kwargs = kwargs_loaded
             except Exception:
                 logging.error('failed to load existing file: overwrite it')
 
@@ -167,6 +169,8 @@ parser_help.set_defaults(func=help_)
 parser_quantize = subparsers.add_parser('quantize', help='Build and save few-bit approximation.')  # noqa: E501
 parser_quantize.set_defaults(func=quantize)
 parser_quantize.add_argument('-M', '--max-iters', type=int, default=10000, help='')  # noqa: E501
+parser_quantize.add_argument('-b', '--border-error', type=float, default=1e-6)  # noqa: E501
+parser_quantize.add_argument('-l', '--level-error', type=float, default=1e-6)  # noqa: E501
 parser_quantize.add_argument('-o', '--output', type=PathType(False, not_dir=True), help='Path to store quantization parameters.')  # noqa: E501
 parser_quantize.add_argument('-s', '--seed', type=int, default=None, help='')  # noqa: E501
 parser_quantize.add_argument('nobits', type=int, help='Number of bits to use in quantization.')  # noqa: E501

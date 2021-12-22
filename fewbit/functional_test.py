@@ -85,7 +85,7 @@ class TestContinousFunctions(TestCase):
         zs = rhs(qs.clone(), *args, **kwargs)
 
         v_err = T.linalg.norm(zs - ys).item()
-        self.assertAlmostEqual(0, v_err, places=6)
+        self.assertAlmostEqual(0, v_err, delta=1e-6)
 
         # Estimate L2 approximation error.
         def deriv_lhs(xs: np.ndarray) -> np.ndarray:
@@ -94,11 +94,13 @@ class TestContinousFunctions(TestCase):
             zs.backward(T.ones_like(ys))
             return ys.grad.cpu().numpy()
 
-        entry = store.get(rhs.__name__, nobits)
+        if (entry_key := rhs.__name__) == 'log_sigmoid':
+            entry_key = 'logsigmoid'
+        entry = store.get(entry_key, nobits)
         deriv_rhs = StepWiseFunction(*[el.numpy() for el in entry])
 
         g_err, _ = estimate_error(deriv_lhs, deriv_rhs, 1e-2)
-        self.assertAlmostEqual(0, g_err, places=1)
+        self.assertAlmostEqual(0, g_err, delta=1e-1)
 
     def setUp(self):
         self.xs = T.linspace(-5, 5, 101).to('cuda')

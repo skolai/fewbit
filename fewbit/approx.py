@@ -160,7 +160,8 @@ def estimate_error(fn, fn_approx, dx):
         a, b = fn_approx.borders[i:i + 2]
         nopoints = min(1024 ** 2, int((b - a) / dx))
         xs = np.linspace(a, b, nopoints)
-        es[i] = sp.integrate.simpson((fn(xs) - fn_approx(xs)) ** 2, xs, dx)
+        ys = fn_approx.levels[i]
+        es[i] = sp.integrate.simpson((fn(xs) - ys)**2, xs, dx)
     return es.sum(), es
 
 
