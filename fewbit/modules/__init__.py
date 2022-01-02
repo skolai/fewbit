@@ -10,3 +10,6 @@ from .activations import (  # noqa: F401
 from .activations import (  # noqa: F401
     CELU, ELU, GELU, Hardswish, LogSigmoid, Mish, SELU, Sigmoid, SiLU,
     Softplus, Softsign, Tanh, Tanhshrink)
+
+# Import linear layers with approximate matmul.
+from .linear import LinearCRS, LinearGRP  # noqa: F401
