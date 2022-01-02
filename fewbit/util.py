@@ -1,15 +1,20 @@
 #   encoding: utf-8
 #   filename: util.py
 
+import re
+
 import torch as T
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import partial
+from functools import partial, wraps
+from re import Pattern
 from typing import Any, Callable, Optional
 
-__all__ = ('HookedMemoryUsage', 'estimate_memory_usage', 'memory_usage_hooks',
-           'teniter', 'traverse')
+from .modules.linear import LinearCRS, LinearGRP
+
+__all__ = ('HookedMemoryUsage', 'estimate_memory_usage', 'map_module',
+           'memory_usage_hooks', 'teniter', 'traverse')
 
 TraverseCallable = Callable[[Any, T.Tensor, bool], Any]
 
@@ -139,3 +144,55 @@ def memory_usage_hooks() -> HookedMemoryUsage:
 
     with T.autograd.graph.saved_tensors_hooks(pack, unpack):
         yield usage
+
+
+def map_module(root: T.nn.Module,
+               func: Callable[[T.nn.Module, str], T.nn.Module],
+               patt: Optional[str] = None) -> T.nn.Module:
+    """Function map_module applies function to each leaf of module tree which
+    matches to a specified pattern.
+    """
+    @wraps(func)
+    def func_safe(*args, **kwargs):
+        node = func(*args, **kwargs)
+        if not isinstance(node, T.nn.Module):
+            raise ValueError('Mapped result should be toch.nn.Module type.')
+        return node
+
+    return _map_module(root, func_safe, re.compile(patt or r'.*'), '')
+
+
+def _map_module(root: T.nn.Module, func: Callable[[T.nn.Module, str],
+                                                  T.nn.Module], patt: Pattern,
+                path: str) -> T.nn.Module:
+    for name, child in root.named_children():
+        node = _map_module(child, func, patt, f'{path}/{name}')
+        if node != child:
+            setattr(root, name, node)
+    if patt.match(path or '/'):
+        root = func(root, path or '/')
+    return root
+
+
+def convert_linear(module: T.nn.Linear,
+                   target: str = 'crs',
+                   **kwargs) -> T.nn.Module:
+    """Function convert_linear takes module and returns linear module with
+    approximate matmul. Non-linear modules are returned intact.
+    """
+    if not isinstance(module, T.nn.Linear):
+        return module
+
+    if target == 'crs':
+        ctor = LinearCRS
+    elif target == 'grp':
+        ctor = LinearGRP
+    else:
+        raise ValueError(f'Unexpected value of target: {target}.')
+
+    return ctor(in_features=module.in_features,
+                out_features=module.out_features,
+                bias=module.bias is not None,
+                device=module.weight.device,
+                dtype=module.weight.dtype,
+                **kwargs)
