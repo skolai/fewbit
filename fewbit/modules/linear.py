@@ -69,7 +69,7 @@ class LinearCRS(T.nn.Linear):
         return linear_crs(input, self.weight, self.bias, self.nopairs)
 
     def extra_repr(self) -> str:
-        return f'{super().extra_repr()} + nopairs={self.nopairs}'
+        return f'{super().extra_repr()}, nopairs={self.nopairs}'
 
 
 class LinearGRPFunc(T.autograd.Function):
@@ -192,8 +192,9 @@ class LinearGRP(T.nn.Linear):
                  mode: Optional[str] = None,
                  generator: Optional[T.Generator] = None) -> None:
         super().__init__(in_features, out_features, bias, device, dtype)
-        self.mode = mode
         self.generator = generator
+        self.mode = mode or 'batch'
+        # TODO: Rework parametrization of embedding dimention.
         self.proj_features: int = proj_features or out_features // 2
 
     def forward(self, input: T.Tensor) -> T.Tensor:
@@ -203,8 +204,8 @@ class LinearGRP(T.nn.Linear):
     def extra_repr(self) -> str:
         return ', '.join([
             super().extra_repr(),
-            f'proj_features={self.nopairs}',
-            f'dim={self.dim}',
+            f'proj_features={self.proj_features}',
+            f'mode={self.mode}',
         ])
 
 
