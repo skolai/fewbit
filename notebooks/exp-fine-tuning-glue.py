@@ -139,6 +139,11 @@ parser.add_argument('-m', '--model-dir',
                     type=Path,
                     help='Directory to save checkpoint files.')
 
+parser.add_argument('-n', '--num-bits',
+                    default=None,
+                    type=int,
+                    help='Directory to save checkpoint files.')
+
 parser.add_argument('-s', '--seed',
                     default=SEED,
                     type=int,
@@ -265,7 +270,21 @@ def setup(task: str,
 # -
 
 def train(task: str, cache_dir: Path, data_dir: Path, log_dir: Path,
-          model_dir: Path, seed: int):
+          model_dir: Path, num_bits: Optional[int], seed: int):
+    if num_bits:
+        # NOTE Monkey patching of HuggingFace's transformers v4.12.5 in order
+        # to replace standard GeLU with our 3-bits GeLU approximation. Other
+        # possible solution is subclassing model and configuration via model
+        # config.
+        #
+        # TODO Now, we can use fewbit.util.map_module to transform RoBERTa
+        # model and replace with our GELU.
+        import fewbit.functional as F
+        import transformers.activations
+        gelu = partial(F.gelu, bits=num_bits)
+        transformers.activations.ACT2FN['gelu'] = gelu
+        transformers.activations.gelu = gelu
+
     makedirs(cache_dir, exist_ok=True)
     makedirs(log_dir, exist_ok=True)
     makedirs(model_dir, exist_ok=True)
