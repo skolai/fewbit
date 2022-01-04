@@ -1,4 +1,44 @@
-# few-bit-backward
+# Few-Bit Backward
+
+## Usage
+
+The library `fewbit` implements basic activation functions with backward pass
+optimizations for reducing memory footprint during model training.
+All activation functions exported by the library can be used as a drop-in
+replacement for most of standard activation functions implemented in PyTorch.
+The common pattern is to replace `torch.nn` with `fewbit` package qualifier.
+
+```python
+import fewbit
+import torch as T
+
+model = T.nn.Sequencial(
+    ...,
+    fewbit.GELU(bits=3),  # Use 3-bits GELU approximation.
+    ...,
+)
+```
+
+### List of Activation Functions
+
+The library only supports element-wise activation functions.
+
+#### Piece-wise Activation Functions
+
+In this section, all activation functions has 1-bit derivative.
+The only difference is band.
+The band requires two comparison to determine gradient domain.
+The complete list of activation functions is `leaky_relu`, `relu`,
+`threshold`, `hardsigmoid`, `hardtanh`, `relu6`, `hardshrink`, and
+`softshrink`.
+
+##### Continous Activation Functions
+
+All continous activation function could be divided into three classes according to its parity property: odd, even, and neither even nor odd.
+The parity property allows to use a small optimization to increase precision of approximation.
+The complete list of reimplemented activation functions in this category is
+`celu`, `elu`, `hardswish`, `logsigmoid`, `mish`, `selu`, `sigmoid`, `silu`,
+`softplus`, `softsign`, `tanh`, and `tanhshrink`.
 
 ## Assembly
 
