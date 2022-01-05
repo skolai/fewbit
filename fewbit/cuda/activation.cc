@@ -4,6 +4,22 @@
 
 namespace fewbit {
 
+uint32_t Log2(uint32_t val) {
+    bool is_power = (val & (val - 1)) == 0;
+    uint32_t bw = 0;
+    while (val) {
+        ++bw;
+        val >>= 1;
+    }
+    return bw + static_cast<uint32_t>(!is_power);
+}
+
+uint32_t GetBitWidth(torch::Tensor const &tensor) {
+    uint32_t val = tensor.numel();
+    // TODO: Replace with std::bit_width in C++20.
+    return val == 1 ? 2 : Log2(val);
+}
+
 class HardshrinkCudaFunction
     : public torch::autograd::Function<HardshrinkCudaFunction> {
 private:
@@ -330,7 +346,7 @@ public:
                                  torch::Tensor const &inputs,
                                  torch::Tensor const &bounds,
                                  torch::Tensor const &levels, Args &&...args) {
-        auto nobits = static_cast<int32_t>(std::log2(bounds.numel()) + 0.5);
+        auto nobits = GetBitWidth(levels);
         auto nogroups = (inputs.numel() - 1) / kMaxBitWidth + 1;
         auto buffer_len = nobits * nogroups;
         auto buffer_opt = torch::TensorOptions()
@@ -350,7 +366,7 @@ public:
     backward(torch::autograd::AutogradContext *ctx,
              torch::autograd::variable_list grad_output) {
         auto state = ctx->get_saved_variables();
-        auto nobits = static_cast<int32_t>(std::log2(state[0].numel()) + 0.5);
+        auto nobits = GetBitWidth(state[1]);
         // All continous activation functions have the same pattern in their
         // signatures: all auxiliary parameters are appened to the end.
         auto constexpr nograds_base = 3;
