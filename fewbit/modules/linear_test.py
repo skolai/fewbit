@@ -6,7 +6,8 @@ import torch as T
 from itertools import product
 from unittest import TestCase
 
-from fewbit.modules.linear import LinearCRS, LinearGRP
+# Use these imports through globals dictionary.
+from fewbit.modules.linear import LinearCRS, LinearGRP  # noqa: F401
 
 
 def clone_module(module: T.nn.Module) -> T.nn.Module:
@@ -72,7 +73,7 @@ class LinearTestCaseMixin:
             with self.subTest(**kwargs):
                 module = self.layer_ctor(in_features=256,
                                          out_features=128,
-                                         proj_features=64,
+                                         proj_dim=64,
                                          **kwargs)
                 module_cloned = clone_module(module)
 

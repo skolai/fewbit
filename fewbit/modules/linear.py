@@ -10,6 +10,16 @@ from typing import Optional
 __all__ = ('LinearCRS', 'LinearGRP')
 
 
+def clamp(val: int,
+          minval: Optional[int] = None,
+          maxval: Optional[int] = None) -> int:
+    if minval:
+        val = max(minval, val)
+    if maxval:
+        val = min(maxval, val)
+    return val
+
+
 class LinearCRSFunc(T.autograd.Function):
 
     @staticmethod
@@ -61,12 +71,12 @@ class LinearCRS(T.nn.Linear):
                  bias: bool = True,
                  device=None,
                  dtype=None,
-                 nopairs: Optional[int] = None) -> None:
-        super().__init__(in_features, out_features, bias, device, dtype)
-        self.nopairs: int = nopairs or out_features // 2
+                 proj_dim: Optional[int] = None) -> None:
+        super().__init__(in_features, out_features, proj_dim, device, dtype)
+        self.proj_dim: int = proj_dim or out_features // 2
 
     def forward(self, input: T.Tensor) -> T.Tensor:
-        return linear_crs(input, self.weight, self.bias, self.nopairs)
+        return linear_crs(input, self.weight, self.bias, self.proj_dim)
 
     def extra_repr(self) -> str:
         return f'{super().extra_repr()}, nopairs={self.nopairs}'
@@ -75,27 +85,50 @@ class LinearCRS(T.nn.Linear):
 class LinearGRPFunc(T.autograd.Function):
 
     @staticmethod
+    def calc_proj_dim(ndim: int, proj_dim_ratio: Optional[float],
+                      proj_dim: Optional[int], proj_dim_max: Optional[int],
+                      proj_dim_min: Optional[int]):
+        if proj_dim:
+            result = proj_dim
+        elif proj_dim_ratio:
+            result = int(proj_dim_ratio * ndim)
+        else:
+            result = ndim
+        return clamp(result, proj_dim_min, proj_dim_max)
+
+    @staticmethod
     def forward(ctx,
                 input: T.Tensor,
                 weight: T.Tensor,
                 bias: Optional[T.Tensor],
-                proj_features: int,
+                proj_dim_ratio: Optional[float] = None,
+                proj_dim: Optional[int] = None,
+                proj_dim_max: Optional[int] = None,
+                proj_dim_min: Optional[int] = None,
                 mode: Optional[str] = None,
                 generator: Optional[T.Generator] = None) -> T.Tensor:
         # TODO: Remove dispatching and generalize forward passes. Provide
         # specializations in backward passes for different modes.
         if mode == 'batch':
             return LinearGRPFunc.forward_batch(ctx, input, weight, bias,
-                                               proj_features, generator)
+                                               proj_dim_ratio, proj_dim,
+                                               proj_dim_max, proj_dim_min,
+                                               generator)
         elif mode == 'features' or mode is None:
             return LinearGRPFunc.forward_features(ctx, input, weight, bias,
-                                                  proj_features)
+                                                  proj_dim)
         else:
             raise ValueError(f'Unexpected mode: {mode}.')
 
     @staticmethod
-    def forward_batch(ctx, input: T.Tensor, weight: T.Tensor,
-                      bias: Optional[T.Tensor], proj_features: int,
+    def forward_batch(ctx,
+                      input: T.Tensor,
+                      weight: T.Tensor,
+                      bias: Optional[T.Tensor],
+                      proj_dim_ratio: Optional[float],
+                      proj_dim: Optional[int],
+                      proj_dim_max: Optional[int],
+                      proj_dim_min: Optional[int],
                       generator: Optional[T.Generator]) -> T.Tensor:
         device = input.device
 
@@ -106,8 +139,11 @@ class LinearGRPFunc(T.autograd.Function):
                 generator = T.Generator(device=device)
         generator_state = generator.get_state()
 
+        # Calculate number of dimension of projection space.
         input_view = input.view(-1, input.shape[-1])
-        proj_features = int(0.5 * input_view.shape[0])  # TODO: Hardcoded.
+        proj_features = LinearGRPFunc.calc_proj_dim(input_view.shape[0],
+                                                    proj_dim_ratio, proj_dim,
+                                                    proj_dim_max, proj_dim_min)
         proj = T.randn((proj_features, input_view.shape[0]),
                        generator=generator,
                        device=device)
@@ -164,7 +200,7 @@ class LinearGRPFunc(T.autograd.Function):
         if ctx.needs_input_grad[2]:
             grad_bias = T.einsum('...i->i', grad_output)
 
-        return (grad_input, grad_weight, grad_bias, None, None, None)
+        return (grad_input, grad_weight, grad_bias) + (None, ) * 6
 
     @staticmethod
     def backward_features(ctx, grad_output):
@@ -183,7 +219,7 @@ class LinearGRPFunc(T.autograd.Function):
         if ctx.needs_input_grad[2]:
             bias_grad = T.einsum('...i->i', grad_output)
 
-        return (input_grad, weight_grad, bias_grad, None, None, None)
+        return (input_grad, weight_grad, bias_grad) + (None, ) * 6
 
 
 class LinearGRP(T.nn.Linear):
@@ -198,24 +234,33 @@ class LinearGRP(T.nn.Linear):
                  bias: bool = True,
                  device=None,
                  dtype=None,
-                 proj_features: Optional[int] = None,
+                 proj_dim_ratio: Optional[float] = None,
+                 proj_dim: Optional[int] = None,
+                 proj_dim_min: Optional[int] = None,
+                 proj_dim_max: Optional[int] = None,
                  mode: Optional[str] = None,
                  generator: Optional[T.Generator] = None) -> None:
         super().__init__(in_features, out_features, bias, device, dtype)
         self.generator = generator
         self.mode = mode or 'batch'
-        # TODO: Rework parametrization of embedding dimention.
-        self.proj_features: int = proj_features or out_features // 2
+        self.proj_dim_ratio = proj_dim_ratio
+        self.proj_dim = proj_dim
+        self.proj_dim_max = proj_dim_max
+        self.proj_dim_min = proj_dim_min
 
     def forward(self, input: T.Tensor) -> T.Tensor:
-        return linear_grp(input, self.weight, self.bias, self.proj_features,
+        return linear_grp(input, self.weight, self.bias, self.proj_dim_ratio,
+                          self.proj_dim, self.proj_dim_max, self.proj_dim_min,
                           self.mode, self.generator)
 
     def extra_repr(self) -> str:
         return ', '.join([
             super().extra_repr(),
-            f'proj_features={self.proj_features}',
             f'mode={self.mode}',
+            f'proj_dim={self.proj_dim}',
+            f'proj_dim_ratio={self.proj_dim_ratio}',
+            f'proj_dim_max={self.proj_dim_max}',
+            f'proj_dim_min={self.proj_dim_min}',
         ])
 
 
