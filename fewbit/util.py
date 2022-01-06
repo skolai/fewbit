@@ -11,8 +11,6 @@ from functools import partial, wraps
 from re import Pattern
 from typing import Any, Callable, Optional
 
-from .modules.linear import LinearCRS, LinearGRP
-
 __all__ = ('HookedMemoryUsage', 'estimate_memory_usage', 'map_module',
            'memory_usage_hooks', 'teniter', 'traverse')
 
@@ -174,25 +172,22 @@ def _map_module(root: T.nn.Module, func: Callable[[T.nn.Module, str],
     return root
 
 
-def convert_linear(module: T.nn.Linear,
-                   target: str = 'crs',
-                   **kwargs) -> T.nn.Module:
+def convert_linear(module: T.nn.Linear, ctor, **kwargs) -> T.nn.Module:
     """Function convert_linear takes module and returns linear module with
     approximate matmul. Non-linear modules are returned intact.
     """
     if not isinstance(module, T.nn.Linear):
         return module
 
-    if target == 'crs':
-        ctor = LinearCRS
-    elif target == 'grp':
-        ctor = LinearGRP
-    else:
-        raise ValueError(f'Unexpected value of target: {target}.')
+    # Construct new layer from existing Linear layer.
+    layer = ctor(in_features=module.in_features,
+                 out_features=module.out_features,
+                 bias=module.bias is not None,
+                 device=module.weight.device,
+                 dtype=module.weight.dtype,
+                 **kwargs)
+    layer.weight = T.nn.Parameter(module.weight)
+    if layer.bias is not None:
+        layer.bias = T.nn.Parameter(module.bias)
 
-    return ctor(in_features=module.in_features,
-                out_features=module.out_features,
-                bias=module.bias is not None,
-                device=module.weight.device,
-                dtype=module.weight.dtype,
-                **kwargs)
+    return layer
