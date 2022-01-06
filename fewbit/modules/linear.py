@@ -97,14 +97,21 @@ class LinearGRPFunc(T.autograd.Function):
     def forward_batch(ctx, input: T.Tensor, weight: T.Tensor,
                       bias: Optional[T.Tensor], proj_features: int,
                       generator: Optional[T.Generator]) -> T.Tensor:
+        device = input.device
+
         if not generator:
-            generator = T.random.default_generator
+            if device.type == 'cpu':
+                generator = T.random.default_generator
+            else:
+                generator = T.Generator(device=device)
         generator_state = generator.get_state()
 
-        proj = T.randn((proj_features, input.shape[0]),
+        input_view = input.view(-1, input.shape[-1])
+        proj_features = int(0.5 * input_view.shape[0])  # TODO: Hardcoded.
+        proj = T.randn((proj_features, input_view.shape[0]),
                        generator=generator,
-                       device=input.device)
-        proj_input = (proj @ input) / proj_features
+                       device=device)
+        proj_input = (proj @ input_view) / proj_features
 
         ctx.save_for_backward(proj_input, weight, bias)
         ctx.mode = 'batch'
@@ -144,10 +151,13 @@ class LinearGRPFunc(T.autograd.Function):
 
         grad_weight = None
         if ctx.needs_input_grad[1]:
-            proj = T.randn((ctx.proj_features, grad_output.shape[0]),
+            # We are forced to reshape intead of view because output gradients
+            # has incompatible size and strides.
+            grad_output_view = grad_output.reshape(-1, grad_output.shape[-1])
+            proj = T.randn((ctx.proj_features, grad_output_view.shape[0]),
                            generator=generator,
                            device=grad_output.device)
-            grad_output_proj = proj @ grad_output
+            grad_output_proj = proj @ grad_output_view
             grad_weight = grad_output_proj.T @ input_proj
 
         grad_bias = None
