@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # # Few-Bit: Postprocessing of GLUE fine-tuning
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import tensorboard as tb
 import tensorboard.data_compat
@@ -55,7 +56,7 @@ dirname = Path('../log')
 
 frames = []
 for filename in filenames:
-    task, param, _ = filename.split('/', 2)
+    param, task, _ = filename.split('/', 2)
     path = dirname / filename
     frame = convert(path)
     frame = frame.reset_index()
@@ -79,12 +80,14 @@ summary = df \
     .max()
 summary['value'] = summary.value * 100
 summary = summary\
-        .pivot_table(['value'], ['task'], ['param']) \
+        .pivot_table(['value'], ['param'], ['task']) \
         .sort_index(ascending=False)
 summary.columns = summary.columns.levels[1]
+summary.columns.rename(None, inplace=True)
 summary.index = summary.index.map(format_index)
 summary.index.rename(None, inplace=True)
 summary.head()
+
 summary.to_latex(buf='table.tex',
                  na_rep=f'{MDASH:^5s}',
                  float_format=lambda x: f'{x:5.2f}',
@@ -92,3 +95,32 @@ summary.to_latex(buf='table.tex',
                  label='tab:glue-fine-tuning')
 
 # !cat 'table.tex'
+
+df = pd.concat(frames)
+df = df[df.tag == 'train/train_samples_per_second'] \
+    .set_index(['task', 'param']) \
+    .sort_index()
+df = df[['value']]
+
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+ratios = [1, 5, 10, 20, 50, 90, 100]
+index = ['01', '05', '10', '20', '50', '90', '100', 'baseline']
+
+# +
+fig, ax = plt.subplots(figsize=(6.7, 3), dpi=150)
+fig.suptitle('Throughput of model with Gaussian randomized matmul')
+
+for color, (key, group) in zip(colors, df.groupby(level=[0])):
+    values = group \
+        .reset_index(level=[0], drop=True) \
+        .reindex(index=index) \
+        .value
+    throughput, baseline = values[:-1].values, values[-1]
+    ax.plot(ratios, throughput / baseline, '-', color=color, label=key)
+
+ax.grid()
+ax.legend()
+ax.set_xlim(0, 100)
+ax.set_xticks([0, 10, 20, 30, 40, 50, 60, 70])
+ax.set_xlabel('Compression ratio, %')
+ax.set_ylabel('Speed up in throughput')
