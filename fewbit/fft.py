@@ -11,8 +11,8 @@ DCTType = Literal[1, 2, 3, 4]
 
 def _dct2(x: T.Tensor, n: Optional[int], dim: int, norm: DCTNorm) -> T.Tensor:
     # 0a. Move DCT dimension to the last one.
-    x = x.transpose(dim, -1)
     m = x.shape[dim]
+    x = x.transpose(dim, -1)
 
     # 0b. Select multiplication factor for normalization regime.
     if norm == 'backward':

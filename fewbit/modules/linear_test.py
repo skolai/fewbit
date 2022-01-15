@@ -100,5 +100,4 @@ class TestLinearCRS(TestCase, LinearTestCaseMixin):
 class TestLinearGRP(TestCase, LinearTestCaseMixin):
 
     def test_backward(self):
-        super().test_backward(['bias', 'mode'], [False, True],
-                              ['batch', 'features'])
+        super().test_backward(['bias'], [False, True])

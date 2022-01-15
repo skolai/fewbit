@@ -5,9 +5,13 @@ import torch as T
 import torch.autograd
 import torch.nn.functional as F
 
-from typing import Optional
+from typing import Literal, Optional
+
+from ..fft import dct
 
 __all__ = ('LinearCRS', 'LinearGRP')
+
+MatMulType = Literal['dct', 'gaussian']
 
 
 def clamp(val: int,
@@ -97,39 +101,11 @@ class LinearGRPFunc(T.autograd.Function):
         return clamp(result, proj_dim_min, proj_dim_max)
 
     @staticmethod
-    def forward(ctx,
-                input: T.Tensor,
-                weight: T.Tensor,
-                bias: Optional[T.Tensor],
-                proj_dim_ratio: Optional[float] = None,
-                proj_dim: Optional[int] = None,
-                proj_dim_max: Optional[int] = None,
-                proj_dim_min: Optional[int] = None,
-                mode: Optional[str] = None,
-                generator: Optional[T.Generator] = None) -> T.Tensor:
-        # TODO: Remove dispatching and generalize forward passes. Provide
-        # specializations in backward passes for different modes.
-        if mode == 'batch':
-            return LinearGRPFunc.forward_batch(ctx, input, weight, bias,
-                                               proj_dim_ratio, proj_dim,
-                                               proj_dim_max, proj_dim_min,
-                                               generator)
-        elif mode == 'features' or mode is None:
-            return LinearGRPFunc.forward_features(ctx, input, weight, bias,
-                                                  proj_dim)
-        else:
-            raise ValueError(f'Unexpected mode: {mode}.')
-
-    @staticmethod
-    def forward_batch(ctx,
-                      input: T.Tensor,
-                      weight: T.Tensor,
-                      bias: Optional[T.Tensor],
-                      proj_dim_ratio: Optional[float],
-                      proj_dim: Optional[int],
-                      proj_dim_max: Optional[int],
-                      proj_dim_min: Optional[int],
-                      generator: Optional[T.Generator]) -> T.Tensor:
+    def forward(ctx, input: T.Tensor, weight: T.Tensor,
+                bias: Optional[T.Tensor], proj_dim_ratio: Optional[float],
+                proj_dim: Optional[int], proj_dim_max: Optional[int],
+                proj_dim_min: Optional[int], matmul: MatMulType,
+                generator: Optional[T.Generator]) -> T.Tensor:
         device = input.device
 
         if not generator:
@@ -144,39 +120,33 @@ class LinearGRPFunc(T.autograd.Function):
         proj_features = LinearGRPFunc.calc_proj_dim(input_view.shape[0],
                                                     proj_dim_ratio, proj_dim,
                                                     proj_dim_max, proj_dim_min)
-        proj = T.randn((proj_features, input_view.shape[0]),
-                       generator=generator,
-                       device=device)
-        proj_input = (proj @ input_view) / proj_features
+
+        if matmul == 'dct':
+            proj_probas = T.ones(input_view.shape[0], device=device)
+            proj_probas /= input_view.shape[0]
+            proj = T.multinomial(input=proj_probas,
+                                 num_samples=proj_features,
+                                 replacement=True,
+                                 generator=generator)
+            proj_factor = proj_features * input_view.shape[0]
+            proj_input = dct(input_view, dim=0, norm='ortho')
+            proj_input = proj_factor * proj_input[proj, ...]
+        elif matmul == 'gaussian':
+            proj = T.randn((proj_features, input_view.shape[0]),
+                           generator=generator,
+                           device=device)
+            proj_input = (proj @ input_view) / proj_features
+        else:
+            raise ValueError(f'Unexpected matmul type: {matmul}.')
 
         ctx.save_for_backward(proj_input, weight, bias)
-        ctx.mode = 'batch'
         ctx.proj_features = proj_features
+        ctx.matmul = matmul
         ctx.generator_state = generator_state
         return F.linear(input, weight, bias)
 
     @staticmethod
-    def forward_features(ctx, input: T.Tensor, weight: T.Tensor,
-                         bias: Optional[T.Tensor],
-                         proj_features: int) -> T.Tensor:
-        in_features = weight.shape[1]
-        proj = T.randn((proj_features, in_features))
-        input_proj = (input @ proj.T) / proj_features
-        ctx.save_for_backward(input_proj, weight, bias, proj)
-        ctx.mode = 'features'
-        return F.linear(input, weight, bias)
-
-    @staticmethod
     def backward(ctx, grad_output):
-        if ctx.mode == 'batch':
-            return LinearGRPFunc.backward_batch(ctx, grad_output)
-        elif ctx.mode == 'features':
-            return LinearGRPFunc.backward_features(ctx, grad_output)
-        else:
-            raise RuntimeError('Unexpected execution path.')
-
-    @staticmethod
-    def backward_batch(ctx, grad_output):
         input_proj, weight, bias = ctx.saved_tensors
         generator = T.Generator(grad_output.device)
         generator.set_state(ctx.generator_state)
@@ -190,10 +160,28 @@ class LinearGRPFunc(T.autograd.Function):
             # We are forced to reshape intead of view because output gradients
             # has incompatible size and strides.
             grad_output_view = grad_output.reshape(-1, grad_output.shape[-1])
-            proj = T.randn((ctx.proj_features, grad_output_view.shape[0]),
-                           generator=generator,
-                           device=grad_output.device)
-            grad_output_proj = proj @ grad_output_view
+
+            # Depending on type of approximate mamul used we select specific
+            # branch to rematerialize random projection.
+            if ctx.matmul == 'dct':
+                proj_probas = T.ones(grad_output_view.shape[0],
+                                     device=grad_output.device)
+                proj_probas /= grad_output_view.shape[0]
+                proj = T.multinomial(input=proj_probas,
+                                     num_samples=ctx.proj_features,
+                                     replacement=True,
+                                     generator=generator)
+                grad_output_proj = dct(grad_output_view, dim=0,
+                                       norm='ortho')[proj, :]
+            elif ctx.matmul == 'gaussian':
+                proj = T.randn((ctx.proj_features, grad_output_view.shape[0]),
+                               generator=generator,
+                               device=grad_output.device)
+                grad_output_proj = proj @ grad_output_view
+            else:
+                raise RuntimeError('Unexpected code path.')
+
+            # Finally, estimate gradients of weights.
             grad_weight = grad_output_proj.T @ input_proj
 
         grad_bias = None
@@ -201,25 +189,6 @@ class LinearGRPFunc(T.autograd.Function):
             grad_bias = T.einsum('...i->i', grad_output)
 
         return (grad_input, grad_weight, grad_bias) + (None, ) * 6
-
-    @staticmethod
-    def backward_features(ctx, grad_output):
-        input_proj, weight, bias, proj = ctx.saved_tensors
-
-        input_grad = None
-        if ctx.needs_input_grad[0]:
-            input_grad = grad_output @ weight
-
-        weight_grad = None
-        if ctx.needs_input_grad[1]:
-            weight_grad = T.einsum('...i,...j->ij', input_proj, grad_output)
-            weight_grad = weight_grad.T @ proj
-
-        bias_grad = None
-        if ctx.needs_input_grad[2]:
-            bias_grad = T.einsum('...i->i', grad_output)
-
-        return (input_grad, weight_grad, bias_grad) + (None, ) * 6
 
 
 class LinearGRP(T.nn.Linear):
@@ -238,11 +207,11 @@ class LinearGRP(T.nn.Linear):
                  proj_dim: Optional[int] = None,
                  proj_dim_min: Optional[int] = None,
                  proj_dim_max: Optional[int] = None,
-                 mode: Optional[str] = None,
+                 matmul: MatMulType = 'gaussian',
                  generator: Optional[T.Generator] = None) -> None:
         super().__init__(in_features, out_features, bias, device, dtype)
         self.generator = generator
-        self.mode = mode or 'batch'
+        self.matmul = matmul
         self.proj_dim_ratio = proj_dim_ratio
         self.proj_dim = proj_dim
         self.proj_dim_max = proj_dim_max
@@ -251,12 +220,12 @@ class LinearGRP(T.nn.Linear):
     def forward(self, input: T.Tensor) -> T.Tensor:
         return linear_grp(input, self.weight, self.bias, self.proj_dim_ratio,
                           self.proj_dim, self.proj_dim_max, self.proj_dim_min,
-                          self.mode, self.generator)
+                          self.matmul, self.generator)
 
     def extra_repr(self) -> str:
         return ', '.join([
             super().extra_repr(),
-            f'mode={self.mode}',
+            f'matmul={self.matmul}',
             f'proj_dim={self.proj_dim}',
             f'proj_dim_ratio={self.proj_dim_ratio}',
             f'proj_dim_max={self.proj_dim_max}',
