@@ -11,7 +11,7 @@ from ..fft import dct
 
 __all__ = ('LinearCRS', 'LinearGRP')
 
-MatMulType = Literal['dct', 'gaussian']
+MatMulType = Literal['dct', 'gaussian', 'rademacher']
 
 
 def clamp(val: int,
@@ -136,6 +136,15 @@ class LinearGRPFunc(T.autograd.Function):
                            generator=generator,
                            device=device)
             proj_input = (proj @ input_view) / proj_features
+        elif matmul == 'rademacher':
+            proj_shape = (proj_features, input_view.shape[0])
+            proj = T.randint(high=2,
+                             size=proj_shape,
+                             generator=generator,
+                             device=generator.device,
+                             dtype=input.dtype)
+            proj = proj - 0.5
+            proj_input = (proj @ input_view) * (4 / proj_features)
         else:
             raise ValueError(f'Unexpected matmul type: {matmul}.')
 
@@ -177,6 +186,15 @@ class LinearGRPFunc(T.autograd.Function):
                 proj = T.randn((ctx.proj_features, grad_output_view.shape[0]),
                                generator=generator,
                                device=grad_output.device)
+                grad_output_proj = proj @ grad_output_view
+            elif ctx.matmul == 'rademacher':
+                proj_shape = (ctx.proj_features, grad_output_view.shape[0])
+                proj = T.randint(high=2,
+                                 size=proj_shape,
+                                 generator=generator,
+                                 device=generator.device,
+                                 dtype=input_proj.dtype)
+                proj = proj - 0.5
                 grad_output_proj = proj @ grad_output_view
             else:
                 raise RuntimeError('Unexpected code path.')
