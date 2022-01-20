@@ -147,7 +147,7 @@ def search_benchmark(pattern: str):
 
 
 def spawn(name: str, timeout: int, socket: str):
-    cmd = (executable, ENTRYPOINT, '--run', name)
+    cmd = (executable, ENTRYPOINT, '--run', name, '--socket', socket)
     try:
         child = Popen(cmd, stdout=stderr)
         with open(socket) as fin:
