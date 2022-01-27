@@ -2,37 +2,53 @@
 linear layer.
 """
 
+import numpy as np
 import torch as T
+
+from typing import Optional
+
+from fewbit.modules.linear import LinearGRPFunc
 
 
 def override(f):
     return f
 
 
-def estimate_variance_sgd(input: T.Tensor, output: T.Tensor) -> T.Tensor:
-    bs = input.shape[0]
+def estimate_correlation(input: T.Tensor, output: T.Tensor) -> T.Tensor:
+    xs = T.linalg.norm(input)
+    ys = T.linalg.norm(output)
+    xy = T.linalg.norm(input.T @ output)
+    return (xs * ys / xy)**2
+
+
+def estimate_variance_sgd(input: T.Tensor, output: T.Tensor,
+                          bs: Optional[int] = None) -> T.Tensor:
+    if not bs:
+        bs = input.shape[0]
     fst = bs / (bs - 1)
     snd = 1 / (bs - 1)
-
-    xs = T.linalg.norm(input, dim=1) ** 2
+    xs = T.linalg.norm(input, dim=1)**2
     ys = T.linalg.norm(output, dim=1) ** 2
     xy = T.linalg.norm(input.T @ output) ** 2
     return fst * (xs @ ys) - snd * xy
 
 
-def estimate_variance_rmm(input: T.Tensor, output: T.Tensor) -> T.Tensor:
-    bs = input.shape[0]
+def estimate_variance_rmm(input: T.Tensor, output: T.Tensor,
+                          bs_proj: Optional[int] = None) -> T.Tensor:
+    # NOTE We have to specify bs_proj since there is no way to inference it
+    # from function arguments.
+    if not bs_proj:
+        bs_proj = input.shape[0]
     xs = T.linalg.norm(input) ** 2
     ys = T.linalg.norm(output) ** 2
     xy = T.linalg.norm(input.T @ output) ** 2
-    return (xs * ys - xy) / bs
-
-
-def estimate_correlation(input: T.Tensor, output: T.Tensor) -> T.Tensor:
-    pass
+    return (xs * ys - xy) / bs_proj
 
 
 class GradientStorage:
+    """Class GradientStorage implements a minimal stateful object to accumulate
+    input and output gradients for a module.
+    """
 
     def __init__(self):
         self.input = None
@@ -58,6 +74,12 @@ class VarianceEstimatorImpl(GradientStorage):
         self.callback = callback
         self.step = 0
         self.variance = None
+        self.bs = None
+        self.bs_proj = None
+
+    def set_batch_size(self, bs, bs_proj):
+        self.bs = bs
+        self.bs_proj = bs_proj
 
     @override
     def postprocess(self):
@@ -67,14 +89,15 @@ class VarianceEstimatorImpl(GradientStorage):
         input = self.input.reshape(-1, self.input.shape[-1])
         output = self.grad_output.reshape(-1, self.grad_output.shape[-1])
 
-        var = (estimate_variance_sgd(input, output),
-               estimate_variance_rmm(input, output))
+        corr = estimate_correlation(input, output)
+        var_sgd = estimate_variance_sgd(input, output, self.bs)
+        var_rmm = estimate_variance_rmm(input, output, self.bs_proj)
 
         if callable(self.callback):
-            self.callback(var, self.step)
+            self.callback(corr, var_sgd, var_rmm, self.step)
 
         self.step += 1
-        self.variance = var
+        self.variance = (corr, var_sgd, var_sgd)
 
     def __repr__(self) -> str:
         has_input = self.input is not None
@@ -116,7 +139,15 @@ class VarianceEstimator(T.nn.Module):
         return self.state.variance
 
     def forward(self, input: T.Tensor, *args, **kwargs):
+        bs = np.prod(input.shape[:-1])
+        bs_proj = LinearGRPFunc.calc_proj_dim(bs, self.model.proj_dim_ratio,
+                                              self.model.proj_dim,
+                                              self.model.proj_dim_max,
+                                              self.model.proj_dim_min)
+
+        self.state.set_batch_size(bs, bs_proj)
         self.state.forward(input)
+
         output = self.model(input, *args, **kwargs)
         if isinstance(output, tuple):
             return catch_gradients(output[0], self.state), *output[1:]
