@@ -18,7 +18,7 @@ def estimate_correlation(input: T.Tensor, output: T.Tensor) -> T.Tensor:
     xs = T.linalg.norm(input)
     ys = T.linalg.norm(output)
     xy = T.linalg.norm(input.T @ output)
-    return (xs * ys / xy)**2
+    return (xy / (xs * ys))**2
 
 
 def estimate_variance_sgd(input: T.Tensor, output: T.Tensor,
@@ -56,7 +56,6 @@ class GradientStorage:
 
     def forward(self, input):
         self.input = input.detach().clone()
-        self.grad_output = None
 
     def backward(self, grad_output):
         self.grad_output = grad_output.detach().clone()
