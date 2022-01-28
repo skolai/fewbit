@@ -200,7 +200,11 @@ def setup(task: str,
     # NOTE Replace default Linear layer with ours with routine that traverses
     # module as a tree in post-order.
     def convert_layer(module, path):
-        return convert_linear(module, LinearGRP, proj_dim_ratio=proj_dim_ratio)
+        return convert_linear(module,
+                              LinearGRP,
+                              matmul='dft',
+                              proj_dim_ratio=proj_dim_ratio,
+                              proj_dim_min=3)
 
     if proj_dim_ratio:
         model = map_module(model, convert_layer)
