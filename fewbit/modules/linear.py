@@ -11,7 +11,7 @@ from ..fft import dct
 
 __all__ = ('LinearCRS', 'LinearGRP')
 
-MatMulType = Literal['dct', 'gaussian', 'rademacher']
+MatMulType = Literal['dct', 'dft', 'gaussian', 'rademacher']
 
 
 def clamp(val: int,
@@ -131,6 +131,16 @@ class LinearGRPFunc(T.autograd.Function):
             proj_factor = proj_features * input_view.shape[0]
             proj_input = dct(input_view, dim=0, norm='ortho')
             proj_input = proj_factor * proj_input[proj, ...]
+        elif matmul == 'dft':
+            proj_probas = T.ones(input_view.shape[0], device=device)
+            proj_probas /= input_view.shape[0]
+            proj = T.multinomial(input=proj_probas,
+                                 num_samples=proj_features,
+                                 replacement=True,
+                                 generator=generator)
+            proj_factor = proj_features * input_view.shape[0]
+            proj_input = T.fft.fft(input_view, dim=0, norm='ortho')
+            proj_input = proj_factor * proj_input[proj, ...]
         elif matmul == 'gaussian':
             proj = T.randn((proj_features, input_view.shape[0]),
                            generator=generator,
@@ -182,6 +192,17 @@ class LinearGRPFunc(T.autograd.Function):
                                      generator=generator)
                 grad_output_proj = dct(grad_output_view, dim=0,
                                        norm='ortho')[proj, :]
+            elif ctx.matmul == 'dft':
+                proj_probas = T.ones(grad_output_view.shape[0],
+                                     device=grad_output.device)
+                proj_probas /= grad_output_view.shape[0]
+                proj = T.multinomial(input=proj_probas,
+                                     num_samples=ctx.proj_features,
+                                     replacement=True,
+                                     generator=generator)
+                grad_output_proj = T.fft.ifft(grad_output_view,
+                                              dim=0,
+                                              norm='ortho')[proj, :]
             elif ctx.matmul == 'gaussian':
                 proj = T.randn((ctx.proj_features, grad_output_view.shape[0]),
                                generator=generator,
@@ -200,6 +221,8 @@ class LinearGRPFunc(T.autograd.Function):
                 raise RuntimeError('Unexpected code path.')
 
             # Finally, estimate gradients of weights.
+            if grad_output_proj.is_complex():
+                grad_output_proj = grad_output_proj.real
             grad_weight = grad_output_proj.T @ input_proj
 
         grad_bias = None
