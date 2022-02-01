@@ -1,4 +1,4 @@
-# Few-Bit Backward
+# FewBit
 
 ## Usage
 
@@ -12,11 +12,23 @@ The common pattern is to replace `torch.nn` with `fewbit` package qualifier.
 import fewbit
 import torch as T
 
-model = T.nn.Sequencial(
+model = T.nn.Sequential(
     ...,
     fewbit.GELU(bits=3),  # Use 3-bits GELU approximation.
     ...,
 )
+```
+
+In the case of pre-trained models, one can rebuild model with `map_module` routine which walks through model tree recursively and allows to replace some modules or activation functions.
+So, user should only use suitable constructor for a new module.
+As an example the code below replaces all default linear layers with randomized ones.
+
+```python
+from fewbit import RandomizedLinear
+from fewbit.util import convert_linear, map_module
+
+converter = lambda x: convert_linear(x, RandomizedLinear, proj_dim_ratio=0.1)
+new_model = map_module(old_model, converter)  # In-place model construction.
 ```
 
 ### List of Activation Functions
