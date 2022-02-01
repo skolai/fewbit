@@ -5,11 +5,12 @@ import torch.nn.functional as F
 from unittest import TestCase, skip, skipUnless
 
 from fewbit.approx import StepWiseFunction, estimate_error
-from fewbit.functional import (hardshrink, hardsigmoid, hardtanh, leaky_relu,
-                               relu, relu6, softshrink, threshold, celu, elu,
-                               gelu, hardswish, logsigmoid, mish, selu,
-                               sigmoid, silu, softplus, softsign, tanh,
-                               tanhshrink, store)
+from fewbit.functional.activations import (hardshrink, hardsigmoid, hardtanh,
+                                           leaky_relu, relu, relu6, softshrink,
+                                           threshold, celu, elu, gelu,
+                                           hardswish, logsigmoid, mish, selu,
+                                           sigmoid, silu, softplus, softsign,
+                                           tanh, tanhshrink, store)
 
 
 @skipUnless(T.cuda.is_available(), 'CUDA support is required.')

@@ -7,18 +7,17 @@ import torch as T
 
 from typing import Optional
 
-from fewbit.modules.linear import LinearGRPFunc
+from ..functional.linear import LinearGRPFunc
+from ..functional.variance import GradientStorage, catch_gradients
 
-
-def override(f):
-    return f
+__all__ = ('VarianceEstimator', )
 
 
 def estimate_correlation(input: T.Tensor, output: T.Tensor) -> T.Tensor:
     xs = T.linalg.norm(input)
     ys = T.linalg.norm(output)
     xy = T.linalg.norm(input.T @ output)
-    return (xy / (xs * ys))**2
+    return (xy / (xs * ys)) ** 2
 
 
 def estimate_variance_sgd(input: T.Tensor, output: T.Tensor,
@@ -27,7 +26,7 @@ def estimate_variance_sgd(input: T.Tensor, output: T.Tensor,
         bs = input.shape[0]
     fst = bs / (bs - 1)
     snd = 1 / (bs - 1)
-    xs = T.linalg.norm(input, dim=1)**2
+    xs = T.linalg.norm(input, dim=1) ** 2
     ys = T.linalg.norm(output, dim=1) ** 2
     xy = T.linalg.norm(input.T @ output) ** 2
     return fst * (xs @ ys) - snd * xy
@@ -45,27 +44,6 @@ def estimate_variance_rmm(input: T.Tensor, output: T.Tensor,
     return (xs * ys - xy) / bs_proj
 
 
-class GradientStorage:
-    """Class GradientStorage implements a minimal stateful object to accumulate
-    input and output gradients for a module.
-    """
-
-    def __init__(self):
-        self.input = None
-        self.grad_output = None
-
-    def forward(self, input):
-        self.input = input.detach().clone()
-
-    def backward(self, grad_output):
-        self.grad_output = grad_output.detach().clone()
-        self.postprocess()
-
-    def postprocess(self):
-        """Method postprocess should be overrided in children.
-        """
-
-
 class VarianceEstimatorImpl(GradientStorage):
 
     def __init__(self, callback=None):
@@ -80,7 +58,6 @@ class VarianceEstimatorImpl(GradientStorage):
         self.bs = bs
         self.bs_proj = bs_proj
 
-    @override
     def postprocess(self):
         if self.input is None or self.grad_output is None:
             return
@@ -108,22 +85,6 @@ class VarianceEstimatorImpl(GradientStorage):
             f'{self.variance[1]:e}',
         ])
         return f'VarianceEstimatorImpl({args})'
-
-
-class GradientCatcher(T.autograd.Function):
-
-    @staticmethod
-    def forward(ctx, input: T.Tensor, storage: GradientStorage) -> T.Tensor:
-        ctx.storage = storage
-        return input
-
-    @staticmethod
-    def backward(ctx, grad_output: T.Tensor):
-        ctx.storage.backward(grad_output)
-        return grad_output, None
-
-
-catch_gradients = GradientCatcher.apply
 
 
 class VarianceEstimator(T.nn.Module):

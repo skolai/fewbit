@@ -80,7 +80,7 @@ class StepwiseStore:
 
 # Instantiate "singleton" object to manage quantization right here.
 store = StepwiseStore()
-store.load(Path(__file__).parent / 'data/builtin.npz')
+store.load(Path(__file__).parent / '../data/builtin.npz')
 
 
 def dispatch(name, wrapper):

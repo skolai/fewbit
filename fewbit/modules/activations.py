@@ -8,7 +8,7 @@ from sys import modules
 from typing import Optional, Tuple
 
 from .. import functional
-from ..functional import stepwise
+from ..functional.activations import stepwise
 
 # Stepwise activation functions.
 STEPWISE = ('Hardshrink', 'Hardsigmoid', 'Hardtanh', 'LeakyReLU', 'ReLU',
