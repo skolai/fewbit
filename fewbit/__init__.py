@@ -15,4 +15,5 @@ finally:
 
 from . import functional  # noqa: F401
 from .approx import StepWiseFunction, approximate  # noqa: F401
-from .modules import *  # noqa: F403
+from .modules import *  # noqa: F401,F403
+from .util import map_module  # noqa: F401
