@@ -88,11 +88,36 @@ docker build -t few-bit-backward --build-arg UID=$(id -u) .
 docker run --rm -ti -e TERM=$TERM few-bit-backward
 ```
 
+## Citation
+
+Please cite the following papers if the library is used in an academic paper (export [BibTeX][1]).
+
+```bibtex
+@misc{bershatsky2022memoryefficient,
+    title={{M}emory-{E}fficient {B}ackpropagation through {L}arge {L}inear {L}ayers},
+    author={Daniel Bershatsky and Aleksandr Mikhalev and Alexandr Katrutsa and Julia Gusak and Daniil Merkulov and Ivan Oseledets},
+    year={2022},
+    eprint={2201.13195},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG},
+}
+
+@misc{novikov2022fewbit,
+    title={{F}ew-{B}it {B}ackward: {Q}uantized {G}radients of {A}ctivation {F}unctions for {M}emory {F}ootprint {R}eduction},
+    author={Georgii Novikov and Daniel Bershatsky and Julia Gusak and Alex Shonenkov and Denis Dimitrov and Ivan Oseledets},
+    year={2022},
+    eprint={2202.00441},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG},
+}
+```
+
 ## License
 
 © The FewBit authors, 2022 &mdash; now. Licensed under the BSD 3-Clause License. See [AUTHORS][2] and [LICENSE][2] file for more details[^1].
 
 [^1]: The work was supported by Sber AI and the Analytical center under the RF Government (subsidy agreement 000000D730321P5Q0002, Grant No. 70-2021-00145 02.11.2021).
 
+[1]: doc/fewbit.bib
 [2]: AUTHORS
 [3]: LICENSE
