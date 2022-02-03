@@ -5,7 +5,7 @@ Its efficiency originates from storage optimizations applied to backward pass an
 Namely, the library provides its own implementation of common activation functions and linear layer since they contribute the most to memory usage in training time.
 Optimized linear layer saves up to 15-20% memory and optimized activation functions save up to 15-30% of memory usage with negligible loss in performance (see \[[1][5]\]\[[2][6]\] for details).
 
-In the table below, one can see comparison of different optimizations applied to RoBERTa model. Compression rate of randomized linear layer is 50% and GELU approximation uses only 3 bits.
+In the table below, one can see comparison of different optimizations applied to RoBERTa model. Compression rate of randomized linear layer is 20% (it uses only 20% of input) and GELU approximation uses only 3 bits.
 
 <table>
   <thead>
