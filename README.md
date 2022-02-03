@@ -87,3 +87,12 @@ The latter is crucial thing in binding host volumes.
 docker build -t few-bit-backward --build-arg UID=$(id -u) .
 docker run --rm -ti -e TERM=$TERM few-bit-backward
 ```
+
+## License
+
+© The FewBit authors, 2022 &mdash; now. Licensed under the BSD 3-Clause License. See [AUTHORS][2] and [LICENSE][2] file for more details[^1].
+
+[^1]: The work was supported by Sber AI and the Analytical center under the RF Government (subsidy agreement 000000D730321P5Q0002, Grant No. 70-2021-00145 02.11.2021).
+
+[2]: AUTHORS
+[3]: LICENSE
