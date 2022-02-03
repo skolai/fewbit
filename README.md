@@ -1,5 +1,34 @@
 # FewBit
 
+**FewBit** &mdash; a library for memory efficient training of large neural networks.
+Its efficiency originates from storage optimizations applied to backward pass and memory footprint reduction for saved tensors between forward and backward passes.
+Namely, the library provides its own implementation of common activation functions and linear layer since they contribute the most to memory usage in training time.
+Optimized linear layer saves up to 15-20% memory and optimized activation functions save up to 15-30% of memory usage with negligible loss in performance (see \[[1][5]\]\[[2][6]\] for details).
+
+In the table below, one can see comparison of different optimizations applied to RoBERTa model. Compression rate of randomized linear layer is 50% and GELU approximation uses only 3 bits.
+
+<table>
+  <thead>
+    <tr style="text-align: right;">
+      <th></th><th>Task</th><th>Batch Size</th><th>GELU</th><th>Linear Layer</th><th>Peak Memory, GiB</th><th>Saving, %</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>1</th><td>MRPC</td><td>128</td><td>Vanilla</td><td>Vanilla</td><td>11.30</td><td>0.0</td>
+    </tr>
+    <tr>
+      <th>2</th><td>MRPC</td><td>128</td><td>3-bit</td><td>Vanilla</td><td>9.75</td><td>13.8</td>
+    </tr>
+    <tr>
+      <th>3</th><td>MRPC</td><td>128</td><td>Vanilla</td><td>Randomized</td><td>9.20</td><td>18.6</td>
+    </tr>
+    <tr>
+      <th>4</th><td>MRPC</td><td>128</td><td>3-bit</td><td>Randomized</td><td>7.60</td><td>32.7</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Usage
 
 The library `fewbit` implements basic activation functions with backward pass
@@ -145,3 +174,5 @@ Please cite the following papers if the library is used in an academic paper (ex
 [2]: AUTHORS
 [3]: LICENSE
 [4]: doc/fig/activations.svg
+[5]: https://arxiv.org/abs/2201.13195
+[6]: https://arxiv.org/abs/2202.00441
