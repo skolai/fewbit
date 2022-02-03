@@ -31,9 +31,27 @@ converter = lambda x: convert_linear(x, RandomizedLinear, proj_dim_ratio=0.1)
 new_model = map_module(old_model, converter)  # In-place model construction.
 ```
 
+![Quantized Gradients of Activation Functions][4]
+
+### Installation
+
+The simplest and preferred installation way is installation from PyPI.
+
+```shell
+pip install -U fewbit
+```
+
+FewBit is written in Python, but it implements some opertions in C++/CUDA to archive better performance.
+So, building from source requires CUDA Toolkit and CMake as a build system.
+The latest release can be installed with the following command.
+
+```shell
+pip install -U https://github.com/SkoltechAI/fewbit.git
+```
+
 ### List of Activation Functions
 
-The library only supports element-wise activation functions.
+The library supports the following activation functions.
 
 #### Piece-wise Activation Functions
 
@@ -51,6 +69,11 @@ The parity property allows to use a small optimization to increase precision of 
 The complete list of reimplemented activation functions in this category is
 `celu`, `elu`, `hardswish`, `logsigmoid`, `mish`, `selu`, `sigmoid`, `silu`,
 `softplus`, `softsign`, `tanh`, and `tanhshrink`.
+
+### List of Modules
+
+Module `RandomizedLinear` is a replacement for default `Linear` module.
+It is used power of approximate matrix multiplication for memory saving.
 
 ## Assembly
 
@@ -121,3 +144,4 @@ Please cite the following papers if the library is used in an academic paper (ex
 [1]: doc/fewbit.bib
 [2]: AUTHORS
 [3]: LICENSE
+[4]: doc/fig/activations.svg

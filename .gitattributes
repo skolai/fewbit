@@ -6,3 +6,6 @@
 
 # Mark precomputed quantization as a binary file.
 fewbit/data/builtin.npz binary
+
+# All vector graphics are binary.
+*.svg binary
