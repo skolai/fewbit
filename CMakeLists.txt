@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
-project("few-bit-backward" VERSION 0.0.0 LANGUAGES CXX)
+project("fewbit" VERSION 0.0.0 LANGUAGES CXX)
 
 option(USE_CUDA "Build CUDA kernels" OFF)
 if (USE_CUDA)

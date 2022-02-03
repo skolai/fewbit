@@ -11,7 +11,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
 
 # Set up workspace directory to non-root user.
 
-WORKDIR /workspace/few-bit-backward
+WORKDIR /workspace/fewbit
 
 ARG LOGIN=developer
 

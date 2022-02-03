@@ -95,6 +95,6 @@ class build_ext(build_ext_base):
         self.spawn(cmd)
 
 
-setup(name='fewbit-bit-backward',
+setup(name='fewbit',
       ext_modules=[CMakeExtension('fewbit.fewbit')],
       cmdclass={'build_ext': build_ext})

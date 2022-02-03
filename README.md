@@ -84,8 +84,8 @@ Image contains pre-built native extention and it is parametrized by user name an
 The latter is crucial thing in binding host volumes.
 
 ```shell
-docker build -t few-bit-backward --build-arg UID=$(id -u) .
-docker run --rm -ti -e TERM=$TERM few-bit-backward
+docker build -t fewbit --build-arg UID=$(id -u) .
+docker run --rm -ti -e TERM=$TERM fewbit
 ```
 
 ## Citation
