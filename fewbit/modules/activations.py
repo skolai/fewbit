@@ -8,7 +8,7 @@ from sys import modules
 from typing import Optional, Tuple
 
 from .. import functional
-from ..functional.activations import stepwise
+from ..functional.activations import GeluFallbackFunc, stepwise
 
 # Stepwise activation functions.
 STEPWISE = ('Hardshrink', 'Hardsigmoid', 'Hardtanh', 'LeakyReLU', 'ReLU',
@@ -127,6 +127,21 @@ class BuiltInStepwiseFunction(T.nn.Module):
         return self._impl(xs, *self.args, **self.kwargs)
 
 
+class GeluFallback(T.nn.Module):
+    """Class GeluFallback implements GELU activation functions in pure Python.
+    """
+
+    def __init__(self, bits: int = 3):
+        super().__init__()
+        self.bits = bits
+
+    def forward(self, x):
+        return GeluFallbackFunc.apply(x, self.bits)
+
+    def extra_repr(self) -> str:
+        return f'GeluFallback(bits={self.bits})'
+
+
 # Produce PyTorch modules for in-place alternatives for built-in PyTorch
 # activation function enumerated above manually at runtime.
 for name in __all__:
@@ -134,3 +149,6 @@ for name in __all__:
         ty = type(name, (BuiltInStepwiseFunction, ), {})
         setattr(modules[__name__], name, ty)
 del name, ty
+
+
+Gelu = GeluFallback  # TODO: Force fallback implementation for now.

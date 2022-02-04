@@ -10,6 +10,14 @@ from pathlib import Path
 from sys import modules
 from typing import Optional, Tuple, Union
 
+
+# From Python 3.9 new routine for caching was introduced.
+try:
+    from functools import cache
+except ImportError:
+    from functools import lru_cache as cache
+
+
 # Stepwise activation functions.
 STEPWISE = ('hardshrink', 'hardsigmoid', 'hardtanh', 'leaky_relu', 'relu',
             'relu6', 'softshrink', 'stepwise', 'threshold')
@@ -19,6 +27,37 @@ CONTINOUS = ('celu', 'elu', 'gelu', 'hardswish', 'logsigmoid', 'mish', 'selu',
              'sigmoid', 'silu', 'softplus', 'softsign', 'tanh', 'tanhshrink')
 
 __all__ = STEPWISE + CONTINOUS + ('store', )
+
+
+class GeluFallbackFunc(T.autograd.Function):
+    """Class GeluFallbackFunc is a fallback implementation of GELU activation
+    function in pure Python.
+    """
+
+    @staticmethod
+    @cache
+    def xs(device, dtype, bits: int):
+        return store.get('gelu', bits, device, dtype)[0][1:-1]
+
+    @staticmethod
+    @cache
+    def ys(device, dtype, bits: int):
+        return store.get('gelu', bits, device, dtype)[1]
+
+    @staticmethod
+    def forward(ctx, x: T.Tensor, bits: int = 3):
+        xs = GeluFallbackFunc.xs(x.device, x.dtype, bits)
+        discr = T.searchsorted(xs, x.float()).type(T.uint8)
+        ctx.save_for_backward(discr)
+        ctx.bits = bits
+        return T.nn.functional.gelu(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        discr, = ctx.saved_tensors
+        ys = GeluFallbackFunc.ys(grad_output.device, grad_output.dtype,
+                                 ctx.bits)
+        return ys[discr.type(T.int64)] * grad_output, None
 
 
 class StepwiseStore:
@@ -48,12 +87,15 @@ class StepwiseStore:
             bits: int,
             device: Union[None, str, T.device] = None,
             dtype: Optional[T.dtype] = None):
-        key = (name, bits, T.device(device or 'cpu'), dtype or T.float32)
+        device = T.device(device or 'cpu')
+        dtype = dtype or T.float32
+        key = (name, bits, device, dtype)
         if (leaf := self.CACHE.get(key, None)):
             return leaf
         if (leaf := self.STORE.get(key[:2], None)):
-            self.CACHE[key] = leaf
-            return leaf
+            leaf_cached = tuple(el.to(device, dtype) for el in leaf)
+            self.CACHE[key] = leaf_cached
+            return leaf_cached
         raise KeyError(f'There is not {bits}-bit quantized gradients for '
                        f'activation function {name}.')
 
@@ -179,3 +221,5 @@ for name in STEPWISE:
 for name in CONTINOUS:
     setattr(modules[__name__], name, dispatch(name, get_operator(name)))
 del name
+
+gelu = GeluFallbackFunc.apply  # TODO: Force fallback implementation for now.
