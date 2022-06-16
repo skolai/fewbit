@@ -1,6 +1,8 @@
 add_library("fewbit" SHARED)
-set_property(TARGET "fewbit" PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_compile_features("fewbit" PRIVATE cxx_std_20)
+set_target_properties("fewbit" PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)
 target_link_libraries("fewbit"
     PRIVATE fewbit-cpu
     PUBLIC torch)
