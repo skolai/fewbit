@@ -1,9 +1,20 @@
 from os import environ, makedirs
 from pathlib import Path
 from shutil import rmtree
+from subprocess import check_output
+from sys import executable
 
 from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext as build_ext_base
+
+
+def get_torch_cmake_prefix_path():
+    # We do not want import torch directly in order to save 200+Mb of memory
+    # during building extension.
+    script = 'import torch.utils; print(torch.utils.cmake_prefix_path)'
+    command = [executable, '-c', script]
+    output = check_output(command, encoding='utf-8', timeout=60)
+    return output.strip()
 
 
 class CMakeExtension(Extension):
@@ -32,7 +43,7 @@ class build_ext(build_ext_base):
         self.cmake_generator = None
         self.cmake_prefix_path = None
         self.cuda = False
-        self.cuda_arch = 'auto'
+        self.cuda_arch = 'common'
 
     def run(self):
         cmake_extensions = []
@@ -68,9 +79,13 @@ class build_ext(build_ext_base):
             rmtree(build_dir)
         makedirs(build_dir, exist_ok=True)
 
+        # Obtain CMake prefix path to PyTorch scripts.
+        if not self.cmake_prefix_path:
+            self.cmake_prefix_path = get_torch_cmake_prefix_path()
+
         # Generate project build system.
         cmd = (f'cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -S {source_dir} '
-               f'-B {build_dir} -DCMAKE_BUILD_TYPE={build_type} ').split()
+               f'-B {build_dir} -DCMAKE_BUILD_TYPE={build_type}').split()
         if self.cmake_generator:
             cmd.extend(('-G', self.cmake_generator))
         if self.cmake_prefix_path:
@@ -78,7 +93,7 @@ class build_ext(build_ext_base):
         if self.cuda:
             cmd.append('-DUSE_CUDA=ON')
         if self.cuda and self.cuda_arch:
-            cmd.append(f'-DTORCH_CUDA_ARCH_LIST={self.cuda_arch}')
+            cmd.append(f'-DTORCH_CUDA_ARCH_LIST={self.cuda_arch.capitalize()}')
         if self.debug:
             cmd.append('-DCMAKE_BUILD_TYPE=Debug')
         self.spawn(cmd)
