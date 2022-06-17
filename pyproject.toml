@@ -1,7 +1,7 @@
 # See PEP-517 and PEP-518 for details.
 
 [build-system]
-requires = ["cmake", "setuptools", "setuptools_scm[toml]>=3.4", "wheel"]
+requires = ["cmake", "setuptools", "setuptools_scm>=3.4", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.mypy]
@@ -14,9 +14,6 @@ show_error_context = false
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q"
-
-[tool.setuptools_scm]
-write_to = "fewbit/version.py"
 
 [tool.yapf]
 based_on_style = "pep8"

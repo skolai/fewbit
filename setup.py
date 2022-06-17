@@ -4,17 +4,10 @@ from shutil import rmtree
 from subprocess import check_output
 from sys import executable
 
-from setuptools import Extension, find_packages, setup
+from packaging.version import parse as parse_version
+from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext as build_ext_base
-
-
-def get_torch_cmake_prefix_path():
-    # We do not want import torch directly in order to save 200+Mb of memory
-    # during building extension.
-    script = 'import torch.utils; print(torch.utils.cmake_prefix_path)'
-    command = [executable, '-c', script]
-    output = check_output(command, encoding='utf-8', timeout=60)
-    return output.strip()
+from setuptools_scm import dump_version, get_version
 
 
 class CMakeExtension(Extension):
@@ -110,6 +103,41 @@ class build_ext(build_ext_base):
         self.spawn(cmd)
 
 
+def get_torch_attr(script):
+    # We do not want import torch directly in order to save 200+Mb of memory
+    # during building extension.
+    command = [executable, '-c', script]
+    output = check_output(command, encoding='utf-8', timeout=60)
+    return output
+
+def get_torch_cmake_prefix_path():
+    script = 'import torch.utils; print(torch.utils.cmake_prefix_path)'
+    return get_torch_attr(script)
+
+
+def get_torch_version():
+    script = 'import torch as T; print(T.version.__version__)'
+    return get_torch_attr(script)
+
+
+# Get FewBit version and Torch version.
+fewbit_version = parse_version(get_version())
+torch_version = parse_version(get_torch_version())
+
+# FewBit version is <torch-public>.<fewbit-public>[+<torch-local>] version.
+version = '.'.join([torch_version.public, fewbit_version.base_version])
+if torch_version.local:
+    version += f'+{torch_version.local}'
+
+# Write FewBit version to file.
+dump_version('.', version, 'fewbit/version.py')
+
+# We fix Torch version in order to maintain compatibility between Torch and its
+# extension as well as CUDA ABI.
+install_requires = ['numpy', f'torch=={torch_version}']
+
 setup(name='fewbit',
+      version=version,
+      install_requires=install_requires,
       ext_modules=[CMakeExtension('fewbit.fewbit')],
       cmdclass={'build_ext': build_ext})
