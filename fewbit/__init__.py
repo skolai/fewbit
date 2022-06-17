@@ -14,6 +14,10 @@ finally:
     del Path, T, warn
 
 from . import functional  # noqa: F401
-from .approx import StepWiseFunction, approximate  # noqa: F401
 from .modules import *  # noqa: F401,F403
 from .util import map_module  # noqa: F401
+
+try:
+    from .version import version as __version__
+except ImportError:
+    __version__ = None
