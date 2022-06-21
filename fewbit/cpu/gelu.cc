@@ -6,7 +6,13 @@ namespace fewbit {
 
 std::tuple<torch::Tensor, torch::Tensor> Quantize(torch::Tensor const &inputs,
                                                   torch::Tensor const &bounds) {
+// Add support for PyTorch 1.10.0a for NGC docker images. Namely, for docker
+// image nvcr.io/nvidia/pytorch:21.10-py3.
+#if TORCH_ALPHA
+    auto outputs = torch::gelu(inputs, true);
+#else
     auto outputs = torch::gelu(inputs);
+#endif
     auto codes = torch::searchsorted(bounds, inputs, true);
 
     auto nobits = std::ceil(std::log2(bounds.numel()));

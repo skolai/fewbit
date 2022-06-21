@@ -7,7 +7,7 @@ from sys import executable
 from packaging.version import parse as parse_version
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext as build_ext_base
-from setuptools_scm import dump_version, get_version
+from setuptools_scm import Version, dump_version, get_version
 
 
 class CMakeExtension(Extension):
@@ -27,6 +27,7 @@ class build_ext(build_ext_base):
         ('cmake-prefix-path=', None,
          "semicolon-separated list of directories specifying search prefixes"),
         ('cmake-generator=', None, "supply CMake generator"),
+        ('cmake-options=', None, "supply auxiliary CMake arguments"),
     ]
 
     boolean_options = build_ext_base.boolean_options + ['cuda']
@@ -34,6 +35,7 @@ class build_ext(build_ext_base):
     def initialize_options(self):
         super().initialize_options()
         self.cmake_generator = None
+        self.cmake_options = None
         self.cmake_prefix_path = None
         self.cuda = False
         self.cuda_arch = 'common'
@@ -89,6 +91,8 @@ class build_ext(build_ext_base):
             cmd.append(f'-DTORCH_CUDA_ARCH_LIST={self.cuda_arch.capitalize()}')
         if self.debug:
             cmd.append('-DCMAKE_BUILD_TYPE=Debug')
+        if self.cmake_options:
+            cmd.extend(self.cmake_options.split())
         self.spawn(cmd)
 
         # Build project.
@@ -108,7 +112,7 @@ def get_torch_attr(script):
     # during building extension.
     command = [executable, '-c', script]
     output = check_output(command, encoding='utf-8', timeout=60)
-    return output
+    return output.strip()
 
 def get_torch_cmake_prefix_path():
     script = 'import torch.utils; print(torch.utils.cmake_prefix_path)'
@@ -121,11 +125,14 @@ def get_torch_version():
 
 
 # Get FewBit version and Torch version.
-fewbit_version = parse_version(get_version())
+try:
+    fewbit_version = parse_version(get_version())
+except LookupError:
+    fewbit_version = Version('0.0.0')
 torch_version = parse_version(get_torch_version())
 
-# FewBit version is <torch-public>.<fewbit-public>[+<torch-local>] version.
-version = '.'.join([torch_version.public, fewbit_version.base_version])
+# FewBit version is <torch-base>.<fewbit-public>[+<torch-local>] version.
+version = '.'.join([torch_version.base_version, fewbit_version.base_version])
 if torch_version.local:
     version += f'+{torch_version.local}'
 
