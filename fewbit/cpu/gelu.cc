@@ -6,10 +6,10 @@ namespace fewbit {
 
 std::tuple<torch::Tensor, torch::Tensor> Quantize(torch::Tensor const &inputs,
                                                   torch::Tensor const &bounds) {
-#if __GNUC__ > 9
-    auto outputs = torch::gelu(inputs);
+#if TORCH_VERSION_MAJOR > 1 || TORCH_VERSION_MINOR >= 12
+    auto outputs = torch::gelu(inputs, "tanh");
 #else
-    auto outputs = torch::gelu(inputs, true);
+    auto outputs = torch::gelu(inputs);
 #endif
     auto codes = torch::searchsorted(bounds, inputs, true);
 
