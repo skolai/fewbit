@@ -147,8 +147,23 @@ def memory_usage_hooks() -> HookedMemoryUsage:
 def map_module(root: T.nn.Module,
                func: Callable[[T.nn.Module, str], T.nn.Module],
                patt: Optional[str] = None) -> T.nn.Module:
-    """Function map_module applies function to each leaf of module tree which
-    matches to a specified pattern.
+    """Function ``map_module`` applies a function to each leaf of module tree
+    which matches to a specified pattern.
+
+    Parameters
+    ----------
+    root : torch.nn.Module
+        Module to modify.
+    func : callable
+        Function to be applied to every module (or matched to pattern) in
+        module tree.
+    patt : str, optional
+        Pattern to filter modules by path in module tree.
+
+    Returns
+    -------
+    torch.nn.Module
+        Module modified in-place.
     """
     @wraps(func)
     def func_safe(*args, **kwargs):
