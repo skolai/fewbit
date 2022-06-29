@@ -1,5 +1,8 @@
 #   encoding: utf-8
 #   filename: __init__.py
+"""Package fewbit provides a plenty optimized primitives for the bottleneck
+layers of modern neural networks.
+"""
 
 import torch as T
 
