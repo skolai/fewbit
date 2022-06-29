@@ -6,6 +6,7 @@ import torch as T
 from itertools import product
 from unittest import TestCase
 
+from fewbit.compat import removeprefix
 # Use these imports through globals dictionary.
 from fewbit.modules.linear import LinearCRS, LinearGRP  # noqa: F401
 
@@ -45,7 +46,7 @@ def estimate_grad(module: T.nn.Module, xs: T.Tensor, repeat: int = 1):
 class LinearTestCaseMixin:
 
     def __init_subclass__(cls) -> None:
-        cls.layer_name = cls.__name__.removeprefix('Test')
+        cls.layer_name = removeprefix(cls.__name__, 'Test')
         cls.layer_ctor = globals().get(cls.layer_name, None)
         if cls.layer_ctor is None:
             raise RuntimeError(f'Layer {cls.layer_name} is not imported.')
@@ -56,7 +57,7 @@ class LinearTestCaseMixin:
     def test_forward(self):
         for bias in (False, True):
             with self.subTest(bias=bias):
-                module = self.layer_ctor(8, 4, bias)
+                module = self.layer_ctor(8, 4, bias, proj_dim=64)
                 module_cloned = clone_module(module)
 
                 with T.no_grad():

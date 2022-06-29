@@ -29,7 +29,7 @@ class StepWiseFunction:
         assert borders.size == levels.size + 1
 
         self.borders = borders
-        self.card = self.borders.size - 1
+        self.card = levels.size
         self.levels = levels
         self.steps = levels.copy()
         self.steps[1:] = levels[1:] - levels[:-1]
@@ -155,7 +155,7 @@ def approximate(
 
 
 def estimate_error(fn, fn_approx, dx):
-    es = np.empty(fn_approx.card + 1)
+    es = np.empty(fn_approx.card)
     for i in range(fn_approx.card):
         a, b = fn_approx.borders[i:i + 2]
         nopoints = min(1024 ** 2, int((b - a) / dx))
