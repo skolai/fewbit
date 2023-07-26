@@ -10,14 +10,6 @@ from pathlib import Path
 from sys import modules
 from typing import Optional, Tuple, Union
 
-
-# From Python 3.9 new routine for caching was introduced.
-try:
-    from functools import cache
-except ImportError:
-    from functools import lru_cache as cache
-
-
 # Stepwise activation functions.
 STEPWISE = ('hardshrink', 'hardsigmoid', 'hardtanh', 'leaky_relu', 'relu',
             'relu6', 'softshrink', 'stepwise', 'threshold')
@@ -27,37 +19,6 @@ CONTINOUS = ('celu', 'elu', 'gelu', 'hardswish', 'logsigmoid', 'mish', 'selu',
              'sigmoid', 'silu', 'softplus', 'softsign', 'tanh', 'tanhshrink')
 
 __all__ = STEPWISE + CONTINOUS + ('store', )
-
-
-class GeluFallbackFunc(T.autograd.Function):
-    """Class GeluFallbackFunc is a fallback implementation of GELU activation
-    function in pure Python.
-    """
-
-    @staticmethod
-    @cache
-    def xs(device, dtype, bits: int):
-        return store.get('gelu', bits, device, dtype)[0][1:-1]
-
-    @staticmethod
-    @cache
-    def ys(device, dtype, bits: int):
-        return store.get('gelu', bits, device, dtype)[1]
-
-    @staticmethod
-    def forward(ctx, x: T.Tensor, bits: int = 3):
-        xs = GeluFallbackFunc.xs(x.device, x.dtype, bits)
-        discr = T.searchsorted(xs, x.float()).type(T.uint8)
-        ctx.save_for_backward(discr)
-        ctx.bits = bits
-        return T.nn.functional.gelu(x)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        discr, = ctx.saved_tensors
-        ys = GeluFallbackFunc.ys(grad_output.device, grad_output.dtype,
-                                 ctx.bits)
-        return ys[discr.type(T.int64)] * grad_output, None
 
 
 class StepwiseStore:
@@ -123,6 +84,62 @@ class StepwiseStore:
 # Instantiate "singleton" object to manage quantization right here.
 store = StepwiseStore()
 store.load(Path(__file__).parent / '../data/builtin.npz')
+
+
+class FallbackFunc(T.autograd.Function):
+    """Class FallbackFunc is a fallback implementation of GELU activation
+    function in pure Python.
+
+    Attributes
+    ----------
+        _impl: actual implementation of forward pass.
+    """
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        if not cls.__name__.startswith('LeakyReLU'):
+            impl_name = cls.__name__[:-12].lower()
+        else:
+            impl_name = 'leaky_relu'
+
+        cls._impl_name = impl_name
+        cls._impl = getattr(T.nn.functional, cls._impl_name)
+
+    @staticmethod
+    def forward(ctx, impl, input: T.Tensor, borders: T.Tensor,
+                levels: T.Tensor, *args, **kwargs):
+        if borders.numel() + 1 != levels.numel():
+            raise ValueError('Size of `borders` should be lesser than size '
+                             'of `levels` by one.')
+        state = T.searchsorted(borders, input.float()).type(T.uint8)
+        ctx.save_for_backward(state, levels)
+        ctx.nargs = 4 + len(args) + len(kwargs)
+        # We assume that this PyTorch function is not directly callable and its
+        # derived types have class attribute `_impl` which has a reference to
+        # an actual implementation of forward pass. See PEP-3135 for details.
+        #
+        # [1]: https://peps.python.org/pep-3135/
+        return __class__._impl(input, *args, **kwargs)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        state, levels = ctx.saved_tensors
+        grad_input = (levels[state.type(T.int64)] * grad_output, )
+        return (None, ) + grad_input + (None, ) * (ctx.nargs - 2)
+
+
+class StepwiseFallbackFunc(T.autograd.Function):
+    """Class StepwiseFallbackFunc is a fallback implementation of stepwise
+    activation function in pure Python.
+    """
+
+    @staticmethod
+    def stepwise(input: T.Tensor, borders: T.Tensor, levels: T.Tensor):
+        raise NotImplementedError
+
+    _impl = stepwise
+    _impl_name = 'stepwise'
 
 
 def dispatch(name, wrapper):
@@ -201,25 +218,50 @@ def dispatch(name, wrapper):
     return forward_call
 
 
-def get_operator(name: str):
+def load_func(name: str):
+    func_fallback = getattr(modules[__name__], f'{name}_fallback')
+
     try:
-        func = getattr(T.ops.fewbit, name, None)
+        func = getattr(T.ops.fewbit, name)
     except RuntimeError:
-        # Use stub function to make an error verbose while loading activation
-        # functions eagerly but silent.
-        func = partial(stub, name)
-    return func
+        func = None
+
+    def dispatch_impl(input: T.Tensor, *args, **kwargs):
+        """Function func_impl dispatches a function invokation to it CUDA
+        backend implementation if CUDA devices are availiable and the function
+        implementation for CUDA backend exists.
+        """
+        if input.device.type == 'cuda':
+            return func(input, *args, **kwargs)
+        else:
+            return func_fallback(input, *args, **kwargs)
+
+    func_impl = dispatch_impl
+    if func is None:
+        # If there is nothing to dispatch, do not dispatch!
+        func_impl = func_fallback
+
+    if name in STEPWISE:
+        return func_impl
+    elif name in CONTINOUS:
+        return dispatch(name, func_impl)
+    else:
+        raise RuntimeError(f'Unknown activation function: {name}.')
 
 
-def stub(name, *args, **kwargs):
-    raise RuntimeError(f'Failed to look up function {name}.')
-
+# Define fallbacks for activation functions.
+for name in STEPWISE + CONTINOUS:
+    ty_name = name.capitalize() + 'FallbackFunc'
+    if (ty := getattr(modules[__name__], ty_name, None)) is None:
+        #ty = type(ty_name, (FallbackFunc, ),
+        #          {'_impl': getattr(T.nn.functional, name, None)})
+        ty = FallbackFunc
+        ty._impl = getattr(T.nn.functional, name, None)
+    setattr(modules[__name__], ty.__name__, ty)
+    setattr(modules[__name__], f'{name}_fallback', partial(ty.apply, ty._impl))
 
 # Import all functions enumerated above manually at runtime.
-for name in STEPWISE:
-    setattr(modules[__name__], name, get_operator(name))
-for name in CONTINOUS:
-    setattr(modules[__name__], name, dispatch(name, get_operator(name)))
-del name
+for name in STEPWISE + CONTINOUS:
+    setattr(modules[__name__], name, load_func(name))
 
-gelu = GeluFallbackFunc.apply  # TODO: Force fallback implementation for now.
+del name, ty, ty_name  # Remove local variables.

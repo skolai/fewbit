@@ -204,7 +204,8 @@ __device__ int32_t InflateWarpKernel(int32_t nobits, uint8_t const *data) {
 
 __global__ void InflateBlockKernel(int32_t nobits, uint32_t noelems,
                                    uint8_t const *data, int32_t *output) {
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         output[tid] = InflateWarpKernel(nobits, data);
     }
 }
@@ -271,7 +272,8 @@ void InflateBlock(int32_t nobits, uint32_t noelems, uint8_t const *data,
     __global__ void name##BackwardKernel(                                      \
         uint32_t noelems, uint8_t const *state,                                \
         float const *__restrict__ outgrads, float *__restrict__ ingrads) {     \
-        if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) { \
+        auto tid = blockIdx.x * blockDim.x + threadIdx.x;                      \
+        if (tid < noelems) {                                                   \
             auto idx = InflateWarpKernel(1, state);                            \
             ingrads[tid] = idx * outgrads[tid];                                \
         }                                                                      \
@@ -296,7 +298,8 @@ void InflateBlock(int32_t nobits, uint32_t noelems, uint8_t const *data,
 __global__ void HardshrinkKernel(uint32_t noelems, float const *inputs,
                                  float *outputs, uint8_t *state, float lambda) {
     auto index = 1;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] < -lambda || inputs[tid] > lambda) {
             outputs[tid] = inputs[tid];
         } else {
@@ -313,7 +316,8 @@ DEFINE_STEPWISE_FUNC_BACKWARD(Hardshrink);
 __global__ void HardsigmoidKernel(uint32_t noelems, float const *inputs,
                                   float *outputs, uint8_t *state) {
     auto index = 0;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] <= -3.0) {
             outputs[tid] = 0.0;
         } else if (inputs[tid] >= 3.0) {
@@ -332,7 +336,8 @@ __global__ void HardsigmoidBackwardKernel(uint32_t noelems,
                                           uint8_t const *state,
                                           float const *outgrads,
                                           float *ingrads) {
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         auto indx = InflateWarpKernel(1, state);
         auto mult = indx ? 1.0f / 6.0f : 0.0f;
         ingrads[tid] = mult * outgrads[tid];
@@ -350,7 +355,8 @@ __global__ void HardtanhKernel(uint32_t noelems, float const *inputs,
                                float *outputs, uint8_t *state, float min_val,
                                float max_val) {
     auto index = 0;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] <= min_val) {
             outputs[tid] = min_val;
         } else if (inputs[tid] >= max_val) {
@@ -370,7 +376,8 @@ __global__ void LeakyReluKernel(uint32_t noelems, float const *inputs,
                                 float *outputs, uint8_t *state,
                                 float negative_slope) {
     auto index = 0;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] >= 0) {
             outputs[tid] = inputs[tid];
         } else {
@@ -386,7 +393,8 @@ DEFINE_STEPWISE_FUNC_FORWARD1(LeakyRelu, float);
 __global__ void LeakyReluBackwardKernel(uint32_t noelems, uint8_t const *state,
                                         float const *outgrads, float *ingrads,
                                         float negative_slope) {
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         auto indx = InflateWarpKernel(1, state);
         auto mult = indx ? negative_slope : 1.0;
         ingrads[tid] = mult * outgrads[tid];
@@ -404,7 +412,8 @@ void LeakyReluBackward(uint32_t noelems, uint8_t const *state,
 __global__ void ReluKernel(uint32_t noelems, float const *inputs,
                            float *outputs, uint8_t *state) {
     auto index = 0;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] <= 0) {
             outputs[tid] = 0.0;
         } else {
@@ -421,7 +430,8 @@ DEFINE_STEPWISE_FUNC_BACKWARD(Relu);
 __global__ void Relu6Kernel(uint32_t noelems, float const *inputs,
                             float *outputs, uint8_t *state) {
     auto index = 0;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] <= 0.0) {
             outputs[tid] = 0.0;
         } else if (inputs[tid] >= 6.0) {
@@ -440,7 +450,8 @@ DEFINE_STEPWISE_FUNC_BACKWARD(Relu6);
 __global__ void SoftshrinkKernel(uint32_t noelems, float const *inputs,
                                  float *outputs, uint8_t *state, float lambda) {
     auto index = 1;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] < -lambda) {
             outputs[tid] = inputs[tid] + lambda;
         } else if (inputs[tid] > lambda) {
@@ -460,7 +471,8 @@ __global__ void ThresholdKernel(uint32_t noelems, float const *inputs,
                                 float *outputs, uint8_t *state, float threshold,
                                 float value) {
     auto index = 0;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         if (inputs[tid] <= threshold) {
             outputs[tid] = value;
         } else {
@@ -480,7 +492,8 @@ __global__ void StepwiseKernel(uint32_t noelems, float const *inputs,
                                float const *bounds, Fn fn) {
     auto idx = 0;
     auto len = (1 << nobits) - 1;
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         idx = BinarySearch(len, inputs[tid], bounds); // Or LinearSearch.
         outputs[tid] = fn(inputs[tid]);
     }
@@ -642,7 +655,8 @@ void Tanhshrink(uint32_t noelems, float const *inputs, float *outputs,
 __global__ void StepwiseBackwardKernel(uint32_t noelems, uint8_t const *state,
                                        float const *outgrads, float *ingrads,
                                        int32_t nobits, float const *levels) {
-    if (auto tid = blockIdx.x * blockDim.x + threadIdx.x; tid < noelems) {
+    auto tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < noelems) {
         auto idx = InflateWarpKernel(nobits, state);
         ingrads[tid] = levels[idx] * outgrads[tid];
     }

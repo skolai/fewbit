@@ -1,9 +1,13 @@
 from os import environ, makedirs
 from pathlib import Path
 from shutil import rmtree
+from subprocess import check_output
+from sys import executable
 
-from setuptools import Extension, find_packages, setup
+from packaging.version import parse as parse_version
+from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext as build_ext_base
+from setuptools_scm import Version, dump_version, get_version
 
 
 class CMakeExtension(Extension):
@@ -23,6 +27,7 @@ class build_ext(build_ext_base):
         ('cmake-prefix-path=', None,
          "semicolon-separated list of directories specifying search prefixes"),
         ('cmake-generator=', None, "supply CMake generator"),
+        ('cmake-options=', None, "supply auxiliary CMake arguments"),
     ]
 
     boolean_options = build_ext_base.boolean_options + ['cuda']
@@ -30,9 +35,10 @@ class build_ext(build_ext_base):
     def initialize_options(self):
         super().initialize_options()
         self.cmake_generator = None
+        self.cmake_options = None
         self.cmake_prefix_path = None
         self.cuda = False
-        self.cuda_arch = 'auto'
+        self.cuda_arch = 'common'
 
     def run(self):
         cmake_extensions = []
@@ -68,9 +74,13 @@ class build_ext(build_ext_base):
             rmtree(build_dir)
         makedirs(build_dir, exist_ok=True)
 
+        # Obtain CMake prefix path to PyTorch scripts.
+        if not self.cmake_prefix_path:
+            self.cmake_prefix_path = get_torch_cmake_prefix_path()
+
         # Generate project build system.
         cmd = (f'cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -S {source_dir} '
-               f'-B {build_dir} -DCMAKE_BUILD_TYPE={build_type} ').split()
+               f'-B {build_dir} -DCMAKE_BUILD_TYPE={build_type}').split()
         if self.cmake_generator:
             cmd.extend(('-G', self.cmake_generator))
         if self.cmake_prefix_path:
@@ -78,9 +88,11 @@ class build_ext(build_ext_base):
         if self.cuda:
             cmd.append('-DUSE_CUDA=ON')
         if self.cuda and self.cuda_arch:
-            cmd.append(f'-DTORCH_CUDA_ARCH_LIST={self.cuda_arch}')
+            cmd.append(f'-DTORCH_CUDA_ARCH_LIST={self.cuda_arch.capitalize()}')
         if self.debug:
             cmd.append('-DCMAKE_BUILD_TYPE=Debug')
+        if self.cmake_options:
+            cmd.extend(self.cmake_options.split())
         self.spawn(cmd)
 
         # Build project.
@@ -95,6 +107,46 @@ class build_ext(build_ext_base):
         self.spawn(cmd)
 
 
+def get_torch_attr(script):
+    # We do not want import torch directly in order to save 200+Mb of memory
+    # during building extension.
+    command = [executable, '-c', script]
+    output = check_output(command, encoding='utf-8', timeout=60)
+    return output.strip()
+
+def get_torch_cmake_prefix_path():
+    script = 'import torch.utils; print(torch.utils.cmake_prefix_path)'
+    return get_torch_attr(script)
+
+
+def get_torch_version():
+    script = 'import torch as T; print(T.version.__version__)'
+    return get_torch_attr(script)
+
+
+# Get FewBit version and Torch version.
+try:
+    fewbit_version = parse_version(get_version())
+except LookupError:
+    fewbit_version = Version('0.0.0')
+torch_version = parse_version(get_torch_version())
+
+# FewBit version is <fewbit-public>[+<torch-local>.pt<torch-base>] version.
+version = fewbit_version.base_version
+if torch_version.local:
+    version += f'+{torch_version.local}.pt{torch_version.base_version}'
+else:
+    version += f'+pt{torch_version.base_version}'
+
+# Write FewBit version to file.
+dump_version('.', version, 'fewbit/version.py')
+
+# We fix Torch version in order to maintain compatibility between Torch and its
+# extension as well as CUDA ABI.
+install_requires = ['numpy', f'torch=={torch_version.base_version}']
+
 setup(name='fewbit',
+      version=version,
+      install_requires=install_requires,
       ext_modules=[CMakeExtension('fewbit.fewbit')],
       cmdclass={'build_ext': build_ext})

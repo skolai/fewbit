@@ -86,6 +86,15 @@ class LinearGRPFunc(T.autograd.Function):
                 proj_dim: Optional[int], proj_dim_max: Optional[int],
                 proj_dim_min: Optional[int], matmul: MatMulType,
                 generator: Optional[T.Generator]) -> T.Tensor:
+        # Sanitize parameters of random projections.
+        if proj_dim_ratio is None and proj_dim is None:
+            raise ValueError('Either proj_dim or proj_dim_ratio '
+                             'should be specified.')
+        if proj_dim_min and proj_dim_min <= 0:
+            raise ValueError('Param proj_dim_min should be strictly positive.')
+        if proj_dim_min and proj_dim_max and proj_dim_max < proj_dim_min:
+            raise ValueError('Param proj_dim_min should be not greater than '
+                             'param proj_dim_max.')
         device = input.device
 
         if not generator:
