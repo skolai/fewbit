@@ -144,6 +144,8 @@ class BuiltInStepwiseFunction(T.nn.Module):
     :param args: Actual keyword arguments.
     """
 
+    SIGNATURE = (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
+
     PARAM_BITS = Parameter('bits',
                            Parameter.KEYWORD_ONLY,
                            default=None,
@@ -159,6 +161,15 @@ class BuiltInStepwiseFunction(T.nn.Module):
 
         cls_ref = getattr(T.nn, cls.__name__)  # Reference PyTorch class.
         sig = signature(cls_ref.__init__)
+
+        # Since PyTorch version 2, API of torch.nn.Module was slightly changed.
+        # So, signatures of some activation functions are now not trivial.
+        if len(sig.parameters) == 3:
+            params = [*sig.parameters.values()]
+            comps = zip(params[1:], BuiltInStepwiseFunction.SIGNATURE)
+            if all(param.kind == kind for param, kind in comps):
+                sig = sig.replace(parameters=params[:1])
+
         sig = sig.replace(parameters=[
             param for param in sig.parameters.values()
             if param.name not in ('approximate', 'inplace')

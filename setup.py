@@ -131,17 +131,19 @@ except LookupError:
     fewbit_version = Version('0.0.0')
 torch_version = parse_version(get_torch_version())
 
-# FewBit version is <torch-base>.<fewbit-public>[+<torch-local>] version.
-version = '.'.join([torch_version.base_version, fewbit_version.base_version])
+# FewBit version is <fewbit-public>[+<torch-local>.pt<torch-base>] version.
+version = fewbit_version.base_version
 if torch_version.local:
-    version += f'+{torch_version.local}'
+    version += f'+{torch_version.local}.pt{torch_version.base_version}'
+else:
+    version += f'+pt{torch_version.base_version}'
 
 # Write FewBit version to file.
 dump_version('.', version, 'fewbit/version.py')
 
 # We fix Torch version in order to maintain compatibility between Torch and its
 # extension as well as CUDA ABI.
-install_requires = ['numpy', f'torch=={torch_version}']
+install_requires = ['numpy', f'torch=={torch_version.base_version}']
 
 setup(name='fewbit',
       version=version,

@@ -78,6 +78,21 @@ The latest release can be installed with the following command.
 pip install -U https://github.com/SkoltechAI/fewbit.git
 ```
 
+Another one way to get FewBit is an installation from pre-built wheels from
+custom PyPI. Assume that CUDA version is 11.7 and desired PyTorch version is
+2.0.1 then the command below downloads and installes PyTorch of specified
+version and the latest availiable FewBit.
+
+```shell
+pip install fewbit torch==2.0.1 \
+    --extra-index-url https://download.pytorch.org/whl/cu117 \
+    --extra-index-url https://mirror.daskol.xyz/pypi/cu117/pt2.0.1
+```
+
+Note that URLs of the custom PyPIs are built from CUDA version and PyTorch
+version and can be manually adjusted (see [this page][7] for list of pre-built
+wheels).
+
 ### List of Activation Functions
 
 The library supports the following activation functions.
@@ -176,3 +191,4 @@ Please cite the following papers if the library is used in an academic paper (ex
 [4]: doc/fig/activations.svg
 [5]: https://arxiv.org/abs/2201.13195
 [6]: https://arxiv.org/abs/2202.00441
+[7]: https://mirror.daskol.xyz/pypi/
